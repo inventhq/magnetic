@@ -53,7 +53,7 @@ export function scaffold(dest, opts = {}) {
       module: 'ESNext',
       moduleResolution: 'bundler',
       jsx: 'react-jsx',
-      jsxImportSource: '@magnetic/server',
+      jsxImportSource: '@magneticjs/server',
       strict: true,
       noEmit: true,
       allowImportingTsExtensions: true,
@@ -202,7 +202,7 @@ export function toViewModel(state: AppState) {
 `);
 
   // pages/IndexPage.tsx — main page
-  writeFileSync(join(dir, 'pages/IndexPage.tsx'), `import { Head, Link } from '@magnetic/server/jsx-runtime';
+  writeFileSync(join(dir, 'pages/IndexPage.tsx'), `import { Head, Link } from '@magneticjs/server/jsx-runtime';
 import { TodoInput } from '../components/TodoInput.tsx';
 import { TodoFilters } from '../components/TodoFilters.tsx';
 import { TodoItem } from '../components/TodoItem.tsx';
@@ -254,7 +254,7 @@ export function IndexPage(props: any) {
 `);
 
   // pages/AboutPage.tsx
-  writeFileSync(join(dir, 'pages/AboutPage.tsx'), `import { Head, Link } from '@magnetic/server/jsx-runtime';
+  writeFileSync(join(dir, 'pages/AboutPage.tsx'), `import { Head, Link } from '@magneticjs/server/jsx-runtime';
 
 export function AboutPage(props: any) {
   return (
@@ -296,7 +296,7 @@ export function AboutPage(props: any) {
 `);
 
   // pages/NotFoundPage.tsx
-  writeFileSync(join(dir, 'pages/NotFoundPage.tsx'), `import { Head, Link } from '@magnetic/server/jsx-runtime';
+  writeFileSync(join(dir, 'pages/NotFoundPage.tsx'), `import { Head, Link } from '@magneticjs/server/jsx-runtime';
 
 export function NotFoundPage(props: any) {
   return (
@@ -382,7 +382,7 @@ export function toViewModel(state: AppState) {
 }
 `);
 
-  writeFileSync(join(dir, 'pages/IndexPage.tsx'), `import { Head } from '@magnetic/server/jsx-runtime';
+  writeFileSync(join(dir, 'pages/IndexPage.tsx'), `import { Head } from '@magneticjs/server/jsx-runtime';
 
 export function IndexPage(props: any) {
   return (
@@ -395,7 +395,7 @@ export function IndexPage(props: any) {
 }
 `);
 
-  writeFileSync(join(dir, 'pages/NotFoundPage.tsx'), `import { Head, Link } from '@magnetic/server/jsx-runtime';
+  writeFileSync(join(dir, 'pages/NotFoundPage.tsx'), `import { Head, Link } from '@magneticjs/server/jsx-runtime';
 
 export function NotFoundPage(props: any) {
   return (
@@ -598,7 +598,7 @@ Pages are TSX files in \`pages/\`. The filename determines the route:
 ### Page template
 
 \`\`\`tsx
-import { Head, Link } from '@magnetic/server/jsx-runtime';
+import { Head, Link } from '@magneticjs/server/jsx-runtime';
 
 export function MyPage(props: any) {
   return (
@@ -871,7 +871,7 @@ if (m) {
 Use \`<Link>\` for client-side navigation (no page reload):
 
 \`\`\`tsx
-import { Link } from '@magnetic/server/jsx-runtime';
+import { Link } from '@magneticjs/server/jsx-runtime';
 
 <Link href="/about">About</Link>
 <Link href="/users/42">User Profile</Link>

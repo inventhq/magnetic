@@ -16,7 +16,7 @@ export interface BundleOptions {
   outFile?: string;
   /** Minify output */
   minify?: boolean;
-  /** Monorepo root (for resolving @magnetic/server) */
+  /** Monorepo root (for resolving @magneticjs/server) */
   monorepoRoot?: string;
 }
 
@@ -38,12 +38,12 @@ export async function bundleApp(opts: BundleOptions): Promise<BundleResult> {
     mkdirSync(outDir, { recursive: true });
   }
 
-  // Resolve @magnetic/server — in monorepo use actual path, otherwise npm package
+  // Resolve @magneticjs/server — in monorepo use actual path, otherwise npm package
   const alias: Record<string, string> = {};
   if (opts.monorepoRoot) {
     const serverPkg = join(opts.monorepoRoot, 'js/packages/magnetic-server/src');
-    alias['@magnetic/server'] = serverPkg;
-    alias['@magnetic/server/jsx-runtime'] = join(serverPkg, 'jsx-runtime.ts');
+    alias['@magneticjs/server'] = serverPkg;
+    alias['@magneticjs/server/jsx-runtime'] = join(serverPkg, 'jsx-runtime.ts');
   }
 
   const result = await build({
@@ -60,7 +60,7 @@ export async function bundleApp(opts: BundleOptions): Promise<BundleResult> {
     sourcemap: false,
     target: 'es2020',
     jsx: 'automatic',
-    jsxImportSource: '@magnetic/server',
+    jsxImportSource: '@magneticjs/server',
     alias,
     logLevel: 'warning',
   });

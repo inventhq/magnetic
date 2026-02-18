@@ -1,11 +1,11 @@
-# @magnetic/server
+# @magneticjs/server
 
 Server-driven UI framework for Magnetic. Provides the JSX runtime that transforms TSX into JSON DOM descriptors, plus routing and SSR utilities.
 
 ## Installation
 
 ```bash
-npm install @magnetic/server
+npm install @magneticjs/server
 ```
 
 ## Usage
@@ -13,8 +13,8 @@ npm install @magnetic/server
 ### JSX Runtime (pages & components)
 
 ```tsx
-// tsconfig.json: { "jsx": "react-jsx", "jsxImportSource": "@magnetic/server" }
-import { Head, Link } from '@magnetic/server/jsx-runtime';
+// tsconfig.json: { "jsx": "react-jsx", "jsxImportSource": "@magneticjs/server" }
+import { Head, Link } from '@magneticjs/server/jsx-runtime';
 
 export function IndexPage(props: any) {
   return (
@@ -31,7 +31,7 @@ export function IndexPage(props: any) {
 ### Router
 
 ```ts
-import { createRouter } from '@magnetic/server/router';
+import { createRouter } from '@magneticjs/server/router';
 
 const router = createRouter([
   { path: '/', page: IndexPage },
@@ -55,10 +55,10 @@ const result = router.resolve('/about', viewModel);
 
 | Path | Description |
 |------|-------------|
-| `@magnetic/server` | Core index |
-| `@magnetic/server/jsx-runtime` | JSX factory, Head, Link, Fragment, DomNode |
-| `@magnetic/server/router` | createRouter, route matching |
-| `@magnetic/server/ssr` | render_page, PageOptions |
+| `@magneticjs/server` | Core index |
+| `@magneticjs/server/jsx-runtime` | JSX factory, Head, Link, Fragment, DomNode |
+| `@magneticjs/server/router` | createRouter, route matching |
+| `@magneticjs/server/ssr` | render_page, PageOptions |
 
 ## License
 

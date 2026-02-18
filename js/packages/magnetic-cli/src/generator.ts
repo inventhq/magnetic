@@ -64,13 +64,13 @@ export function scanApp(appDir: string, monorepoRoot?: string): AppScan {
     }
   }
 
-  // Resolve path to @magnetic/server
+  // Resolve path to @magneticjs/server
   let serverPkgPath: string;
   if (monorepoRoot) {
     const relPath = relative(appDir, join(monorepoRoot, 'js/packages/magnetic-server/src'));
     serverPkgPath = relPath.startsWith('.') ? relPath : './' + relPath;
   } else {
-    serverPkgPath = '@magnetic/server';
+    serverPkgPath = '@magneticjs/server';
   }
 
   return { pages, statePath, hasViewModel, serverPkgPath };

@@ -15,7 +15,7 @@ export interface DevOptions {
   port?: number;
   /** Path to the magnetic-v8-server binary */
   serverBin?: string;
-  /** Monorepo root (for resolving @magnetic/server) */
+  /** Monorepo root (for resolving @magneticjs/server) */
   monorepoRoot?: string;
 }
 

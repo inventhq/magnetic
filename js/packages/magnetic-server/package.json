@@ -1,5 +1,5 @@
 {
-  "name": "@magnetic/server",
+  "name": "@magneticjs/server",
   "version": "0.1.0",
   "description": "Magnetic server-driven UI framework — JSX runtime, router, SSR",
   "type": "module",
