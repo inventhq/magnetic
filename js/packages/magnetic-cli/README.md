@@ -1,11 +1,11 @@
-# @magnetic/cli
+# @magneticjs/cli
 
-Build, develop, and deploy Magnetic server-driven UI apps.
+Build, develop, and deploy [Magnetic](https://github.com/inventhq/magnetic) server-driven UI apps.
 
 ## Installation
 
 ```bash
-npm install -g @magnetic/cli
+npm install -g @magneticjs/cli
 ```
 
 This also downloads the `magnetic-v8-server` binary for your platform via postinstall.

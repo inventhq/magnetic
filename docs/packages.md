@@ -7,8 +7,8 @@ npm packages; the binary is fetched automatically.
 
 ```
 Developer installs:
-  npm i -g @magnetic/cli          → CLI tool: magnetic dev/build/push
-  npm i @magnetic/server          → JSX runtime, router, SSR (dev dependency)
+  npm i -g @magneticjs/cli          → CLI tool: magnetic dev/build/push
+  npm i @magneticjs/server          → JSX runtime, router, SSR (dev dependency)
   npx create-magnetic-app my-app  → scaffolder (one-time)
 
 Auto-installed:
@@ -19,29 +19,29 @@ Auto-installed:
 
 ## Packages
 
-### 1. `@magnetic/server` (npm)
+### 1. `@magneticjs/server` (npm)
 
 **What**: JSX runtime that transforms TSX → JSON DOM descriptors. Also includes
 the router, SSR utilities, and middleware helpers.
 
 **Who uses it**: Developers import from it in their page/component files:
 ```tsx
-import { Head, Link } from '@magnetic/server/jsx-runtime';
+import { Head, Link } from '@magneticjs/server/jsx-runtime';
 ```
 
 **Exports**:
 | Path | Description |
 |------|-------------|
-| `@magnetic/server` | Core index (re-exports) |
-| `@magnetic/server/jsx-runtime` | JSX factory, Head, Link, Fragment |
-| `@magnetic/server/router` | `createRouter()`, route matching |
-| `@magnetic/server/ssr` | `render_page()`, `PageOptions` |
+| `@magneticjs/server` | Core index (re-exports) |
+| `@magneticjs/server/jsx-runtime` | JSX factory, Head, Link, Fragment |
+| `@magneticjs/server/router` | `createRouter()`, route matching |
+| `@magneticjs/server/ssr` | `render_page()`, `PageOptions` |
 
 **Publish**: `cd js/packages/magnetic-server && npm publish --access public`
 
 ---
 
-### 2. `@magnetic/cli` (npm)
+### 2. `@magneticjs/cli` (npm)
 
 **What**: CLI tool for building, developing, and deploying Magnetic apps.
 
@@ -106,8 +106,8 @@ serves static files. This is the **only server** — there is no separate backen
 
 | Method | How it works |
 |--------|-------------|
-| **GitHub Releases** (current) | Prebuilt binaries per platform. `@magnetic/cli` downloads it via postinstall script. |
-| **Platform npm packages** (future) | Publish `@magnetic/server-darwin-arm64`, `@magnetic/server-darwin-x64`, `@magnetic/server-linux-x64` — each containing the binary. This is how esbuild, turbo, and swc distribute. |
+| **GitHub Releases** (current) | Prebuilt binaries per platform. `@magneticjs/cli` downloads it via postinstall script. |
+| **Platform npm packages** (future) | Publish `@magneticjs/server-darwin-arm64`, `@magneticjs/server-darwin-x64`, `@magneticjs/server-linux-x64` — each containing the binary. This is how esbuild, turbo, and swc distribute. |
 | **crates.io** | `cargo install magnetic-v8-server` for Rust developers |
 | **Docker image** | For production/CI: `docker pull magnetic/v8-server` |
 

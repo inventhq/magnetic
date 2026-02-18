@@ -1,6 +1,6 @@
 {
   "name": "@magneticjs/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Magnetic CLI — build, dev, and deploy server-driven UI apps",
   "type": "module",
   "bin": {

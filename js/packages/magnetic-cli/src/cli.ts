@@ -37,7 +37,7 @@ function getArg(flag: string): string | undefined {
 
 function usage() {
   console.log(`
-  @magnetic/cli — Build and deploy server-driven UI apps
+  @magneticjs/cli — Build and deploy server-driven UI apps
 
   Usage:
     magnetic dev              Start dev mode (watch + rebuild + serve)

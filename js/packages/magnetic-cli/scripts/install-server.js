@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * install-server.js — Downloads the prebuilt magnetic-v8-server binary
- * for the current platform during `npm install @magnetic/cli`.
+ * for the current platform during `npm install @magneticjs/cli`.
  *
  * Update strategy:
- *   - Version is read from ../package.json (matches @magnetic/cli version)
- *   - When user runs `npm update @magnetic/cli`, this script re-runs
+ *   - Version is read from ../package.json (matches @magneticjs/cli version)
+ *   - When user runs `npm update @magneticjs/cli`, this script re-runs
  *   - Binary version is tracked in bin/.version
  *   - If version mismatch → re-download; if match → skip
  *
