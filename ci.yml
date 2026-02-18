@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        version: 8.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Start simulators (background)
+        run: node simulators/index.js &
+      - name: Wait for simulators
+        run: |
+          for i in {1..50}; do
+            if curl -sf http://localhost:6060/sse >/dev/null; then
+              echo "SSE up"; break
+            fi
+            sleep 0.2
+          done
+      - name: Test
+        run: pnpm test

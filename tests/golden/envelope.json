@@ -1,0 +1,7 @@
+{
+  "topic": "chat.events",
+  "seq": 1,
+  "ts": 1735600000001,
+  "version": 1,
+  "data": { "msg": "hello" }
+}

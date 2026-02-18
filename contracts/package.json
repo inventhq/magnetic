@@ -1,0 +1,8 @@
+{
+  "name": "@magnetic/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Magnetic manifest and schema contracts (source of truth).",
+  "publishConfig": { "access": "public" },
+  "files": [ ".well-known", "schemas" ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@magnetic/server",
+  "version": "0.1.0",
+  "description": "Magnetic server-driven UI framework — JSX runtime, router, SSR",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./router": "./src/router.ts",
+    "./ssr": "./src/ssr.ts"
+  },
+  "files": ["src"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": { "type": "git", "url": "https://github.com/inventhq/magnetic.git", "directory": "js/packages/magnetic-server" },
+  "homepage": "https://github.com/inventhq/magnetic#readme",
+  "keywords": ["magnetic", "server-driven-ui", "jsx", "ssr", "dom-descriptors"],
+  "license": "MIT"
+}

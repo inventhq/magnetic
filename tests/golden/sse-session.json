@@ -1,0 +1,4 @@
+{
+  "endpoint": "http://localhost:6060/sse?topic=chat.events",
+  "expect": ["message", "message"]
+}

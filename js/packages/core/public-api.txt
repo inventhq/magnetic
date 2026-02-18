@@ -1,0 +1,4 @@
+export type ReducerName
+export interface Envelope
+export function reduce
+export function register

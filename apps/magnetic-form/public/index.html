@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Magnetic · Spring Form</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --border: #252525;
+      --border-focus: #6366f1;
+      --text: #e4e4e7;
+      --text-muted: #71717a;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.15);
+      --success: #22c55e;
+      --error: #ef4444;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    #app { width: 100%; max-width: 440px; }
+
+    .form-card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .form-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    .form-header { margin-bottom: 2rem; }
+    .form-header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+    .form-subtitle { color: var(--text-muted); font-size: 0.875rem; line-height: 1.5; }
+
+    /* ── Field ── */
+    .field { position: relative; margin-bottom: 1.25rem; }
+
+    .field label {
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      pointer-events: none;
+      transition: all 0.15s ease;
+      transform-origin: left center;
+    }
+
+    .field.is-textarea label { top: 16px; }
+
+    .field input, .field textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.9rem;
+      font-family: inherit;
+      padding: 14px;
+      outline: none;
+      resize: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .field textarea { min-height: 110px; line-height: 1.5; }
+
+    /* Float label on focus or when input has content */
+    .field input:focus + label,
+    .field textarea:focus + label,
+    .field input:not(:placeholder-shown) + label,
+    .field textarea:not(:placeholder-shown) + label {
+      top: -8px;
+      font-size: 0.72rem;
+      color: var(--accent);
+      background: var(--surface);
+      padding: 0 4px;
+    }
+
+    .field input:focus, .field textarea:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    /* Error state */
+    .error-text {
+      font-size: 0.75rem;
+      color: var(--error);
+      margin-top: 4px;
+      padding-left: 4px;
+      display: none;
+    }
+
+    .error-text.visible { display: block; }
+
+    .field.has-error input,
+    .field.has-error textarea { border-color: var(--error); }
+
+    .field.has-error input:focus + label,
+    .field.has-error textarea:focus + label,
+    .field.has-error input:not(:placeholder-shown) + label,
+    .field.has-error textarea:not(:placeholder-shown) + label {
+      color: var(--error);
+    }
+
+    /* ── Submit button ── */
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    .submit-btn.loading { opacity: 0.6; cursor: wait; }
+
+    /* ── Success overlay ── */
+    .success-overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .success-overlay.visible { opacity: 1; pointer-events: auto; }
+
+    .success-check {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: var(--success);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      font-size: 2rem;
+      color: #fff;
+    }
+
+    .success-overlay h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .success-overlay .success-sub { color: var(--text-muted); font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+
+<div id="app"><!--SSR--></div>
+
+<script src="/magnetic.js"></script>
+<script type="module">
+import { aerostat, snappy, bouncy, smooth } from 'https://esm.sh/@vishinvents/aerostat@0.1.1';
+
+// ─── Connect Magnetic ─────────────────────────────────────────────
+Magnetic.connect("/sse", "#app");
+Magnetic.loadWasm("/transport.wasm");
+
+// ─── Aerostat spring integration ──────────────────────────────────
+
+var lastShakeGen = "0";
+var entranceDone = false;
+
+// Hook into Magnetic._apply to trigger animations after each render
+var _origApply = Magnetic._apply;
+Magnetic._apply = function(snap) {
+  _origApply(snap);
+  if (!entranceDone) { runEntrance(); entranceDone = true; }
+  runShake();
+  runSuccess();
+};
+
+// ── Entrance: stagger fields in from below ────────────────────────
+function runEntrance() {
+  var els = document.querySelectorAll('.field, .submit-btn, .form-header');
+  els.forEach(function(el, i) {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(20px)';
+    setTimeout(function() {
+      aerostat({ from: 0, to: 100, ...bouncy, stiffness: 200, damping: 18, onUpdate: function(v) {
+        el.style.opacity = Math.min(1, v / 80);
+        el.style.transform = 'translateY(' + (20 - v * 0.2) + 'px)';
+      }});
+    }, 60 + i * 60);
+  });
+}
+
+// ── Validation shake: spring oscillation on error fields ──────────
+function runShake() {
+  var fields = document.querySelectorAll('.field.has-error');
+  fields.forEach(function(field) {
+    var gen = field.getAttribute('data-shake-gen') || '0';
+    var prev = field.getAttribute('data-last-shake') || '0';
+    if (gen !== prev) {
+      field.setAttribute('data-last-shake', gen);
+      aerostat({ key: 'shake-' + field.dataset.key, from: 10, to: 0, stiffness: 600, damping: 10, onUpdate: function(v) {
+        field.style.transform = 'translateX(' + v + 'px)';
+      }, onComplete: function() {
+        field.style.transform = '';
+      }});
+    }
+  });
+}
+
+// ── Success: bouncy check pop-in ──────────────────────────────────
+var successShown = false;
+function runSuccess() {
+  var overlay = document.querySelector('.success-overlay.visible');
+  if (overlay && !successShown) {
+    successShown = true;
+    overlay.style.opacity = '0';
+    var check = overlay.querySelector('.success-check');
+    if (check) check.style.transform = 'scale(0)';
+
+    aerostat({ from: 0, to: 100, ...smooth, onUpdate: function(v) {
+      overlay.style.opacity = v / 100;
+    }});
+
+    setTimeout(function() {
+      if (check) {
+        aerostat({ from: 0, to: 100, ...bouncy, stiffness: 200, damping: 14, onUpdate: function(v) {
+          check.style.transform = 'scale(' + (v / 100) + ')';
+        }});
+      }
+    }, 150);
+  }
+}
+
+// ── Button hover/press springs ────────────────────────────────────
+document.addEventListener('mouseenter', function(e) {
+  if (e.target.classList && e.target.classList.contains('submit-btn')) {
+    aerostat({ key: 'btn-h', from: 100, to: 103, ...snappy, onUpdate: function(v) {
+      e.target.style.transform = 'scale(' + (v/100) + ')';
+    }});
+  }
+}, true);
+document.addEventListener('mouseleave', function(e) {
+  if (e.target.classList && e.target.classList.contains('submit-btn')) {
+    aerostat({ key: 'btn-h', from: 103, to: 100, ...smooth, onUpdate: function(v) {
+      e.target.style.transform = 'scale(' + (v/100) + ')';
+    }});
+  }
+}, true);
+document.addEventListener('mousedown', function(e) {
+  if (e.target.closest && e.target.closest('.submit-btn')) {
+    var btn = e.target.closest('.submit-btn');
+    aerostat({ key: 'btn-p', from: 100, to: 95, stiffness: 600, damping: 20, onUpdate: function(v) {
+      btn.style.transform = 'scale(' + (v/100) + ')';
+    }});
+  }
+}, true);
+document.addEventListener('mouseup', function(e) {
+  if (e.target.closest && e.target.closest('.submit-btn')) {
+    var btn = e.target.closest('.submit-btn');
+    aerostat({ key: 'btn-p', from: 95, to: 100, ...bouncy, onUpdate: function(v) {
+      btn.style.transform = 'scale(' + (v/100) + ')';
+    }});
+  }
+}, true);
+
+// ── Focus glow spring ─────────────────────────────────────────────
+document.addEventListener('focusin', function(e) {
+  if (e.target.matches && e.target.matches('.field input, .field textarea')) {
+    aerostat({ key: 'glow-' + e.target.id, from: 0, to: 100, ...snappy, onUpdate: function(v) {
+      e.target.style.boxShadow = '0 0 0 ' + (v*0.03) + 'px rgba(99,102,241,' + (v*0.0015) + ')';
+    }});
+  }
+}, true);
+document.addEventListener('focusout', function(e) {
+  if (e.target.matches && e.target.matches('.field input, .field textarea')) {
+    aerostat({ key: 'glow-' + e.target.id, from: 100, to: 0, ...smooth, onUpdate: function(v) {
+      e.target.style.boxShadow = '0 0 0 ' + (v*0.03) + 'px rgba(99,102,241,' + (v*0.0015) + ')';
+    }});
+  }
+}, true);
+</script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "name": "magnetic",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@8.15.4",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc -b --pretty false",
+    "api:diff": "node -e \"['packages/core/public-api.txt','packages/sdk-web/public-api.txt'].forEach(p=>require('fs').accessSync(p)); console.log('api:diff baseline ok')\"",
+    "sim": "node simulators/index.js",
+    "golden:ls": "node -e \"['tests/golden/envelope.json','tests/golden/sse-session.json','tests/golden/ws-session.json'].forEach(p=>require('fs').accessSync(p)); console.log('goldens present')\"",
+    "validate": "cargo run -q --bin magnetic-validate --manifest-path rs/tools/validate-rust/Cargo.toml contracts",
+    "golden:manifests": "node scripts/golden-manifests.js",
+    "codegen": "cargo run -q --bin magnetic-codegen --manifest-path rs/tools/codegen-rust/Cargo.toml contracts tools/codegen/out",
+    "checksum:codegen": "node scripts/checksum-codegen.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "@typescript-eslint/parser": "7.18.0",
+    "eslint": "9.9.0",
+    "eslint-import-resolver-typescript": "3.6.1",
+    "eslint-plugin-import": "2.29.1",
+    "eventsource": "2.0.2",
+    "typescript": "5.5.4",
+    "vitest": "1.6.1",
+    "ws": "8.18.0"
+  }
+}

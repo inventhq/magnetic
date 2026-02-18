@@ -1,0 +1,17 @@
+[package]
+name = "magnetic-v8-server"
+version = "0.1.0"
+edition = "2021"
+description = "Rust HTTP/SSE server with embedded V8 for Magnetic TSX rendering"
+
+[[bin]]
+name = "magnetic-v8-server"
+path = "src/main.rs"
+
+[dependencies]
+magnetic-dom = { path = "../magnetic-dom" }
+magnetic-render-html = { path = "../magnetic-render-html" }
+magnetic-render-kotlin = { path = "../magnetic-render-kotlin" }
+magnetic-render-swift = { path = "../magnetic-render-swift" }
+serde_json = "1"
+v8 = "130.0.1"

@@ -1,0 +1,4 @@
+{
+  "endpoint": "ws://localhost:7070",
+  "expect": ["frame", "frame"]
+}

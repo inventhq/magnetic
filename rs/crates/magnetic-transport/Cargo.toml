@@ -1,0 +1,13 @@
+[package]
+name = "magnetic-transport"
+version = "0.1.0"
+edition = "2021"
+description = "Generic snapshot transport WASM — cache, predict, diff. App-agnostic."
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

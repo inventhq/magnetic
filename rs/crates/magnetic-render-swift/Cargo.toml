@@ -1,0 +1,11 @@
+[package]
+name = "magnetic-render-swift"
+version = "0.1.0"
+edition = "2021"
+description = "Render Magnetic DomNode trees to SwiftUI code"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+magnetic-dom = { path = "../magnetic-dom" }

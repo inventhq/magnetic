@@ -1,0 +1,13 @@
+{
+  "name": "@magnetic/sdk-web-runtime",
+  "type": "module",
+  "exports": {
+    ".": "./dist/magnetic.min.js"
+  },
+  "sideEffects": false,
+  "files": ["dist"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "node build.cjs"
+  }
+}

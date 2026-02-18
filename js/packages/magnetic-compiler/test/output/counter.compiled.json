@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "name": "counter",
+  "ops": [
+    {
+      "op": "open",
+      "tag": "div",
+      "attrs": {
+        "class": "counter"
+      }
+    },
+    {
+      "op": "open",
+      "tag": "h1"
+    },
+    {
+      "op": "text",
+      "value": "Count:"
+    },
+    {
+      "op": "bind",
+      "field": "count"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "div",
+      "attrs": {
+        "class": "controls"
+      }
+    },
+    {
+      "op": "open",
+      "tag": "button",
+      "events": {
+        "click": "decrement"
+      }
+    },
+    {
+      "op": "text",
+      "value": "-"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "button",
+      "events": {
+        "click": "increment"
+      }
+    },
+    {
+      "op": "text",
+      "value": "+"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "close"
+    }
+  ]
+}

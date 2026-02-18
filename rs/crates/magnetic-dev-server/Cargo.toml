@@ -1,0 +1,11 @@
+[package]
+name = "magnetic-dev-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "magnetic-dev-server"
+path = "src/main.rs"
+
+[dependencies]
+magnetic-reducer-core = { path = "../magnetic-reducer-core", features = ["std"] }

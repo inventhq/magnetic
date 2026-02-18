@@ -1,0 +1,20 @@
+{
+  "name": "create-magnetic-app",
+  "version": "0.1.0",
+  "description": "Scaffold a new Magnetic server-driven UI app",
+  "type": "module",
+  "bin": {
+    "create-magnetic-app": "./bin/create.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src", "bin"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": { "type": "git", "url": "https://github.com/inventhq/magnetic.git", "directory": "js/packages/create-magnetic-app" },
+  "homepage": "https://github.com/inventhq/magnetic#readme",
+  "keywords": ["magnetic", "create-app", "scaffolder", "server-driven-ui"],
+  "license": "MIT"
+}

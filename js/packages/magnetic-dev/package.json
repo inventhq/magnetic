@@ -1,0 +1,8 @@
+{
+  "name": "@magnetic/dev",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "magnetic-dev": "./src/cli.js"
+  }
+}

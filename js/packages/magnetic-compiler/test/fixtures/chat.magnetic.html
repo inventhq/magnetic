@@ -1,0 +1,11 @@
+<div class="messages" key="messages">
+  {{#each messages as msg}}
+    <p class="msg">
+      <strong>{{msg.author}}</strong>: {{msg.text}}
+    </p>
+  {{/each}}
+</div>
+<form @submit="send_message" key="msg-form">
+  <input type="text" name="text" placeholder="Type a message..." autocomplete="off" key="msg-input">
+  <button type="submit">Send</button>
+</form>

@@ -1,0 +1,21 @@
+<div class="app">
+  <h1 key="title">Count: {{count}}</h1>
+  <div class="controls">
+    <button @click="decrement">-</button>
+    <button @click="increment">+</button>
+  </div>
+  <div class="messages" key="messages">
+    {{#each messages as msg}}
+      <p class="msg">{{msg.author}}: {{msg.text}}</p>
+    {{/each}}
+  </div>
+  {{#if hasMessages}}
+    <p class="info">{{msg_count}} messages</p>
+  {{else}}
+    <p class="info empty">No messages yet</p>
+  {{/if}}
+  <form @submit="send_message" key="msg-form">
+    <input type="text" name="text" placeholder="Type a message..." autocomplete="off" key="msg-input">
+    <button type="submit">Send</button>
+  </form>
+</div>

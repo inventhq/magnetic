@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "name": "chat",
+  "ops": [
+    {
+      "op": "open",
+      "tag": "div",
+      "attrs": {
+        "class": "messages"
+      },
+      "key": "messages"
+    },
+    {
+      "op": "each_open",
+      "collection": "messages",
+      "item": "msg"
+    },
+    {
+      "op": "open",
+      "tag": "p",
+      "attrs": {
+        "class": "msg"
+      }
+    },
+    {
+      "op": "open",
+      "tag": "strong"
+    },
+    {
+      "op": "bind",
+      "field": "msg.author"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "text",
+      "value": ":"
+    },
+    {
+      "op": "bind",
+      "field": "msg.text"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "each_close"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "form",
+      "events": {
+        "submit": "send_message"
+      },
+      "key": "msg-form"
+    },
+    {
+      "op": "open",
+      "tag": "input",
+      "attrs": {
+        "type": "text",
+        "name": "text",
+        "placeholder": "Type a message...",
+        "autocomplete": "off"
+      },
+      "key": "msg-input",
+      "selfClose": true
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "button",
+      "attrs": {
+        "type": "submit"
+      }
+    },
+    {
+      "op": "text",
+      "value": "Send"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "close"
+    }
+  ]
+}

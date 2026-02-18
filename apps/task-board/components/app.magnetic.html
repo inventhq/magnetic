@@ -1,0 +1,31 @@
+<div class="task-board" key="board">
+  <div class="header" key="header">
+    <h1 key="title">Task Board</h1>
+    <p class="subtitle" key="subtitle">{{taskCount}}</p>
+  </div>
+
+  <form class="add-form" @submit="add_task" key="add-form">
+    <input type="text" name="title" placeholder="Add a task..." autocomplete="off" key="add-input" />
+    <button type="submit" key="add-btn">Add</button>
+  </form>
+
+  <div class="filters" key="filters">
+    <button @click="filter_all" class="filter-btn {{filterAllClass}}" key="f-all">All</button>
+    <button @click="filter_active" class="filter-btn {{filterActiveClass}}" key="f-active">Active</button>
+    <button @click="filter_done" class="filter-btn {{filterDoneClass}}" key="f-done">Done</button>
+  </div>
+
+  <div class="task-list" key="task-list">
+    {{#each visibleTasks as task}}
+    <div class="task-card {{task.completedClass}}" key="task-{{task.id}}">
+      <button @click="toggle_{{task.id}}" class="check" key="chk-{{task.id}}">{{task.checkmark}}</button>
+      <span class="task-title" key="tt-{{task.id}}">{{task.title}}</span>
+      <button @click="delete_{{task.id}}" class="delete" key="del-{{task.id}}">×</button>
+    </div>
+    {{/each}}
+  </div>
+
+  {{#if isEmpty}}
+  <p class="empty" key="empty">{{emptyMessage}}</p>
+  {{/if}}
+</div>

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "actions": [
+    {
+      "name": "orders.cancel",
+      "method": "POST",
+      "path": "/actions/orders.cancel",
+      "idempotency_header": "Idempotency-Key",
+      "params_schema": { "$ref": "schemas/actions/orders.cancel.schema.json#/$defs/Params" },
+      "ack_schema": { "$ref": "schemas/actions/orders.cancel.schema.json#/$defs/Ack" },
+      "emits_topics": []
+    }
+  ]
+}

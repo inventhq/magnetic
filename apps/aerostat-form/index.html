@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aerostat · Spring Form</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --border: #252525;
+      --border-focus: #6366f1;
+      --text: #e4e4e7;
+      --text-muted: #71717a;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.15);
+      --success: #22c55e;
+      --error: #ef4444;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .form-card {
+      width: 100%;
+      max-width: 440px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .form-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    .form-header {
+      margin-bottom: 2rem;
+    }
+
+    .form-header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+
+    .form-header p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    /* ── Field group ── */
+    .field {
+      position: relative;
+      margin-bottom: 1.25rem;
+    }
+
+    .field label {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      pointer-events: none;
+      transition: none; /* aerostat handles this */
+      transform-origin: left center;
+    }
+
+    .field.is-textarea label {
+      top: 16px;
+      transform: translateY(0);
+    }
+
+    .field input, .field textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.9rem;
+      font-family: inherit;
+      padding: 14px;
+      outline: none;
+      resize: none;
+    }
+
+    .field textarea {
+      min-height: 110px;
+      line-height: 1.5;
+    }
+
+    .field input:focus, .field textarea:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .field.has-value label,
+    .field.is-focused label {
+      top: -8px;
+      transform: translateY(0) scale(0.8);
+      color: var(--accent);
+      background: var(--surface);
+      padding: 0 4px;
+    }
+
+    .field .error-text {
+      font-size: 0.75rem;
+      color: var(--error);
+      margin-top: 4px;
+      padding-left: 4px;
+      display: none;
+    }
+
+    .field.has-error .error-text { display: block; }
+    .field.has-error input,
+    .field.has-error textarea { border-color: var(--error); }
+
+    /* ── Submit button ── */
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .submit-btn .btn-text { position: relative; z-index: 1; }
+
+    /* ── Success overlay ── */
+    .success-overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .success-overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .success-check {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--success);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+
+    .success-check svg {
+      width: 32px;
+      height: 32px;
+      stroke: #fff;
+      stroke-width: 3;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .success-overlay h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .success-overlay p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="form-card" id="formCard">
+  <div class="form-header" id="header">
+    <h1>Get in touch</h1>
+    <p>We'd love to hear from you. Send us a message.</p>
+  </div>
+
+  <form id="contactForm" novalidate>
+    <div class="field" data-field="name">
+      <input type="text" id="name" autocomplete="name" />
+      <label for="name">Full name</label>
+      <div class="error-text">Name is required</div>
+    </div>
+
+    <div class="field" data-field="email">
+      <input type="email" id="email" autocomplete="email" />
+      <label for="email">Email address</label>
+      <div class="error-text">Valid email is required</div>
+    </div>
+
+    <div class="field is-textarea" data-field="message">
+      <textarea id="message" rows="4"></textarea>
+      <label for="message">Your message</label>
+      <div class="error-text">Message is required</div>
+    </div>
+
+    <button type="submit" class="submit-btn" id="submitBtn">
+      <span class="btn-text">Send message</span>
+    </button>
+  </form>
+
+  <div class="success-overlay" id="successOverlay">
+    <div class="success-check" id="successCheck">
+      <svg viewBox="0 0 24 24"><polyline points="6 12 10 16 18 8"/></svg>
+    </div>
+    <h2>Message sent!</h2>
+    <p>We'll get back to you shortly.</p>
+  </div>
+</div>
+
+<script type="module">
+import { aerostat, snappy, bouncy, smooth } from 'https://esm.sh/@vishinvents/aerostat@0.1.1';
+
+// ─── Entrance: stagger fields in from below ───────────────────────
+const fields = document.querySelectorAll('.field');
+const header = document.getElementById('header');
+const submitBtn = document.getElementById('submitBtn');
+
+// Hide everything initially
+header.style.opacity = '0';
+header.style.transform = 'translateY(20px)';
+fields.forEach(f => { f.style.opacity = '0'; f.style.transform = 'translateY(24px)'; });
+submitBtn.style.opacity = '0';
+submitBtn.style.transform = 'translateY(16px)';
+
+function staggerEntrance() {
+  // Header
+  aerostat({ from: 0, to: 100, ...smooth, onUpdate(v) {
+    header.style.opacity = v / 100;
+    header.style.transform = `translateY(${20 - v * 0.2}px)`;
+  }});
+
+  // Fields
+  fields.forEach((f, i) => {
+    setTimeout(() => {
+      aerostat({ from: 0, to: 100, ...bouncy, stiffness: 200, damping: 18, onUpdate(v) {
+        f.style.opacity = Math.min(1, v / 80);
+        f.style.transform = `translateY(${24 - v * 0.24}px)`;
+      }});
+    }, 80 + i * 70);
+  });
+
+  // Button
+  setTimeout(() => {
+    aerostat({ from: 0, to: 100, ...smooth, onUpdate(v) {
+      submitBtn.style.opacity = v / 100;
+      submitBtn.style.transform = `translateY(${16 - v * 0.16}px)`;
+    }});
+  }, 80 + fields.length * 70 + 40);
+}
+
+staggerEntrance();
+
+// ─── Focus / blur: floating label spring ──────────────────────────
+fields.forEach(field => {
+  const input = field.querySelector('input, textarea');
+  const label = field.querySelector('label');
+
+  input.addEventListener('focus', () => {
+    field.classList.add('is-focused');
+    field.classList.remove('has-error');
+
+    // Spring the border glow
+    aerostat({ key: `glow-${input.id}`, from: 0, to: 100, ...snappy, onUpdate(v) {
+      input.style.boxShadow = `0 0 0 ${v * 0.03}px rgba(99,102,241,${v * 0.0015})`;
+    }});
+  });
+
+  input.addEventListener('blur', () => {
+    if (!input.value) field.classList.remove('is-focused');
+    field.classList.toggle('has-value', !!input.value);
+
+    aerostat({ key: `glow-${input.id}`, from: 100, to: 0, ...smooth, onUpdate(v) {
+      input.style.boxShadow = `0 0 0 ${v * 0.03}px rgba(99,102,241,${v * 0.0015})`;
+    }});
+  });
+
+  input.addEventListener('input', () => {
+    field.classList.toggle('has-value', !!input.value);
+  });
+});
+
+// ─── Button hover spring ──────────────────────────────────────────
+submitBtn.addEventListener('mouseenter', () => {
+  aerostat({ key: 'btn-hover', from: 100, to: 103, ...snappy, onUpdate(v) {
+    submitBtn.style.transform = `scale(${v / 100})`;
+  }});
+});
+
+submitBtn.addEventListener('mouseleave', () => {
+  aerostat({ key: 'btn-hover', from: 103, to: 100, ...smooth, onUpdate(v) {
+    submitBtn.style.transform = `scale(${v / 100})`;
+  }});
+});
+
+// ─── Button press squish ──────────────────────────────────────────
+submitBtn.addEventListener('mousedown', () => {
+  aerostat({ key: 'btn-press', from: 100, to: 95, stiffness: 600, damping: 20, onUpdate(v) {
+    submitBtn.style.transform = `scale(${v / 100})`;
+  }});
+});
+
+submitBtn.addEventListener('mouseup', () => {
+  aerostat({ key: 'btn-press', from: 95, to: 100, ...bouncy, onUpdate(v) {
+    submitBtn.style.transform = `scale(${v / 100})`;
+  }});
+});
+
+// ─── Validation shake ─────────────────────────────────────────────
+function shakeField(field) {
+  field.classList.add('has-error');
+  const input = field.querySelector('input, textarea');
+
+  // Damped oscillation: spring from offset back to 0
+  aerostat({ key: `shake-${input.id}`, from: 8, to: 0, stiffness: 600, damping: 10, onUpdate(v) {
+    field.style.transform = `translateX(${v}px)`;
+  }, onComplete() {
+    field.style.transform = '';
+  }});
+}
+
+// ─── Form submit ──────────────────────────────────────────────────
+const form = document.getElementById('contactForm');
+const successOverlay = document.getElementById('successOverlay');
+const successCheck = document.getElementById('successCheck');
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById('name');
+  const email = document.getElementById('email');
+  const message = document.getElementById('message');
+  let valid = true;
+
+  if (!name.value.trim()) { shakeField(name.closest('.field')); valid = false; }
+  if (!email.value.trim() || !email.value.includes('@')) { shakeField(email.closest('.field')); valid = false; }
+  if (!message.value.trim()) { shakeField(message.closest('.field')); valid = false; }
+
+  if (!valid) return;
+
+  // Disable button, show loading
+  submitBtn.disabled = true;
+  submitBtn.querySelector('.btn-text').textContent = 'Sending…';
+
+  // Simulate network delay then show success
+  setTimeout(() => showSuccess(), 600);
+});
+
+function showSuccess() {
+  successOverlay.classList.add('visible');
+  successOverlay.style.opacity = '0';
+  successCheck.style.transform = 'scale(0)';
+
+  // Fade in overlay
+  aerostat({ from: 0, to: 100, ...smooth, onUpdate(v) {
+    successOverlay.style.opacity = v / 100;
+  }});
+
+  // Bouncy check pop-in
+  setTimeout(() => {
+    aerostat({ from: 0, to: 100, ...bouncy, stiffness: 200, damping: 14, onUpdate(v) {
+      successCheck.style.transform = `scale(${v / 100})`;
+    }});
+  }, 150);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chat.events.schema.json",
+  "title": "Chat Events",
+  "type": "object",
+  "$defs": {
+    "MessageSent": {
+      "type": "object",
+      "required": ["type", "room_id", "message_id", "author", "text"],
+      "properties": {
+        "type": { "const": "message.sent" },
+        "room_id": { "type": "string", "minLength": 1 },
+        "message_id": { "type": "string", "minLength": 1 },
+        "author": { "type": "string", "minLength": 1 },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "UserJoined": {
+      "type": "object",
+      "required": ["type", "room_id", "user"],
+      "properties": {
+        "type": { "const": "user.joined" },
+        "room_id": { "type": "string", "minLength": 1 },
+        "user": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "ChatEvent": {
+      "oneOf": [
+        { "$ref": "#/$defs/MessageSent" },
+        { "$ref": "#/$defs/UserJoined" }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "type": "message.sent",
+      "room_id": "general",
+      "message_id": "m_001",
+      "author": "alice",
+      "text": "hello world"
+    },
+    {
+      "type": "user.joined",
+      "room_id": "general",
+      "user": "bob"
+    }
+  ]
+}

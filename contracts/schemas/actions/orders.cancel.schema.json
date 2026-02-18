@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orders.cancel.schema.json",
+  "title": "orders.cancel",
+  "type": "object",
+  "$defs": {
+    "Params": {
+      "type": "object",
+      "required": ["order_id"],
+      "properties": {
+        "order_id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" },
+        "applied_seq": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "Ack": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "const": "OK" },
+        "applied_seq": { "type": "number" },
+        "echoedKey": { "anyOf": [ { "type": "string" }, { "type": "null" } ] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    { "order_id": "o_123", "reason": "user_request" },
+    { "status": "OK", "applied_seq": 42, "echoedKey": "idem_abc" }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "snapshot.schema.json",
+  "title": "Magnetic DOM Snapshot",
+  "description": "JSON DOM descriptor format for server-driven UI snapshots.",
+  "type": "object",
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "required": ["tag"],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "description": "HTML tag name (e.g. div, button, input)."
+        },
+        "key": {
+          "type": "string",
+          "description": "Stable identity for efficient DOM reuse."
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "HTML attributes (class, placeholder, data-*, etc.)."
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Map of DOM event name → action name (e.g. click → increment)."
+        },
+        "text": {
+          "type": "string",
+          "description": "Text content for leaf nodes."
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Node" },
+          "description": "Child nodes."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Snapshot": {
+      "type": "object",
+      "required": ["root"],
+      "properties": {
+        "root": { "$ref": "#/$defs/Node" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "root": {
+        "tag": "div",
+        "children": [
+          { "tag": "h1", "text": "Count: 0" },
+          { "tag": "button", "events": { "click": "increment" }, "text": "+" },
+          { "tag": "button", "events": { "click": "decrement" }, "text": "-" }
+        ]
+      }
+    }
+  ]
+}

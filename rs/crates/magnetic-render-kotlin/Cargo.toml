@@ -1,0 +1,11 @@
+[package]
+name = "magnetic-render-kotlin"
+version = "0.1.0"
+edition = "2021"
+description = "Render Magnetic DomNode trees to Jetpack Compose Kotlin code"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+magnetic-dom = { path = "../magnetic-dom" }

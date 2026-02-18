@@ -1,0 +1,9 @@
+# [P3-C1:validate:start]
+- name: Validate manifests
+  run: pnpm -s validate
+# [P3-C1:validate:end]
+
+# [P3-C1:golden-diff:start]
+- name: Golden diff (manifests)
+  run: pnpm -s golden:manifests
+# [P3-C1:golden-diff:end]

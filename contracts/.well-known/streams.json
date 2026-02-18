@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "streams": [
+    {
+      "topic": "metrics.cpu",
+      "transport": "sse",
+      "schema": { "type": "number" },
+      "hints": {
+        "reducer": "replace",
+        "resume_param": "since",
+        "lease": { "ms": 15000 }
+      }
+    },
+    {
+      "topic": "chat.{room_id}.events",
+      "transport": "ws",
+      "schema": { "$ref": "schemas/events/chat.events.schema.json#/$defs/ChatEvent" },
+      "hints": {
+        "reducer": "append",
+        "resume_param": "since",
+        "lease": { "ms": 30000 }
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+[package]
+name = "task-board"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+magnetic-reducer-core = { path = "../../rs/crates/magnetic-reducer-core", features = ["std"] }

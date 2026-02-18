@@ -1,0 +1,4 @@
+{"topic":"chat.events","seq":1,"ts":1735600000001,"version":1,"data":{"msg":"hello"}}
+{"topic":"chat.events","seq":2,"ts":1735600000601,"version":1,"data":{"msg":"world"}}
+{"topic":"orders.updates","seq":1,"ts":1735600001201,"version":1,"data":{"id":"o_1","state":"placed"}}
+{"topic":"orders.updates","seq":2,"ts":1735600001801,"version":1,"data":{"id":"o_1","state":"paid"}}

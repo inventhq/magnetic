@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "name": "app",
+  "ops": [
+    {
+      "op": "open",
+      "tag": "div",
+      "attrs": {
+        "class": "app"
+      }
+    },
+    {
+      "op": "open",
+      "tag": "h1",
+      "key": "title"
+    },
+    {
+      "op": "text",
+      "value": "Count:"
+    },
+    {
+      "op": "bind",
+      "field": "count"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "div",
+      "attrs": {
+        "class": "controls"
+      }
+    },
+    {
+      "op": "open",
+      "tag": "button",
+      "events": {
+        "click": "decrement"
+      }
+    },
+    {
+      "op": "text",
+      "value": "-"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "button",
+      "events": {
+        "click": "increment"
+      }
+    },
+    {
+      "op": "text",
+      "value": "+"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "div",
+      "attrs": {
+        "class": "messages"
+      },
+      "key": "messages"
+    },
+    {
+      "op": "each_open",
+      "collection": "messages",
+      "item": "msg"
+    },
+    {
+      "op": "open",
+      "tag": "p",
+      "attrs": {
+        "class": "msg"
+      }
+    },
+    {
+      "op": "bind",
+      "field": "msg.author"
+    },
+    {
+      "op": "text",
+      "value": ":"
+    },
+    {
+      "op": "bind",
+      "field": "msg.text"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "each_close"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "if_open",
+      "condition": "hasMessages"
+    },
+    {
+      "op": "open",
+      "tag": "p",
+      "attrs": {
+        "class": "info"
+      }
+    },
+    {
+      "op": "bind",
+      "field": "msg_count"
+    },
+    {
+      "op": "text",
+      "value": "messages"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "else"
+    },
+    {
+      "op": "open",
+      "tag": "p",
+      "attrs": {
+        "class": "info empty"
+      }
+    },
+    {
+      "op": "text",
+      "value": "No messages yet"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "if_close"
+    },
+    {
+      "op": "open",
+      "tag": "form",
+      "events": {
+        "submit": "send_message"
+      },
+      "key": "msg-form"
+    },
+    {
+      "op": "open",
+      "tag": "input",
+      "attrs": {
+        "type": "text",
+        "name": "text",
+        "placeholder": "Type a message...",
+        "autocomplete": "off"
+      },
+      "key": "msg-input",
+      "selfClose": true
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "open",
+      "tag": "button",
+      "attrs": {
+        "type": "submit"
+      }
+    },
+    {
+      "op": "text",
+      "value": "Send"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "close"
+    },
+    {
+      "op": "close"
+    }
+  ]
+}

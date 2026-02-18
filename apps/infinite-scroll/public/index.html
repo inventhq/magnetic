@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Magnetic — Virtualized Infinite Scroll (1500+ items)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a; color: #e0e0e0;
+      overflow: hidden; height: 100vh;
+    }
+
+    /* ── Feed scroller ── */
+    .feed-root {
+      height: 100vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      scroll-behavior: auto;
+    }
+
+    .sentinel { position: relative; }
+
+    /* ── Card (absolutely positioned within sentinel) ── */
+    .card {
+      background: #141414;
+      border: 1px solid #1e1e1e;
+      border-radius: 12px;
+      padding: 1rem;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.15s;
+    }
+    .card:hover { border-color: #333; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .card-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .author {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #fff;
+    }
+
+    .time {
+      font-size: 0.75rem;
+      color: #666;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #e8e8e8;
+      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+
+    .card-img {
+      width: 100%;
+      height: 140px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .card-body {
+      font-size: 0.85rem;
+      color: #999;
+      line-height: 1.5;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .card-footer {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #1e1e1e;
+    }
+
+    .likes, .comments {
+      font-size: 0.78rem;
+      color: #666;
+    }
+
+    .bench-data { display: none; }
+
+    /* ── Benchmark overlay ── */
+    #bench {
+      position: fixed;
+      top: 8px; right: 8px;
+      background: rgba(10, 10, 10, 0.92);
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.72rem;
+      font-family: "SF Mono", "Fira Code", monospace;
+      color: #aaa;
+      z-index: 1000;
+      min-width: 200px;
+      backdrop-filter: blur(8px);
+      line-height: 1.6;
+    }
+    #bench .label { color: #666; }
+    #bench .val { color: #4fc3f7; font-weight: 600; }
+    #bench .val.good { color: #66bb6a; }
+    #bench .val.warn { color: #ffa726; }
+    #bench .val.bad { color: #ef5350; }
+    #bench h4 {
+      color: #fff; font-size: 0.8rem;
+      margin-bottom: 6px; letter-spacing: 0.5px;
+    }
+    #bench hr {
+      border: none; border-top: 1px solid #222;
+      margin: 6px 0;
+    }
+
+    /* ── SSR loading state ── */
+    #app { height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="app"><!--SSR--></div>
+
+  <div id="bench">
+    <h4>MAGNETIC BENCH</h4>
+    <div><span class="label">FPS: </span><span id="b-fps" class="val">—</span></div>
+    <div><span class="label">Frame: </span><span id="b-frame" class="val">—</span></div>
+    <hr>
+    <div><span class="label">TTI: </span><span id="b-tti" class="val">—</span></div>
+    <div><span class="label">SSR→JS: </span><span id="b-hydrate" class="val">—</span></div>
+    <hr>
+    <div><span class="label">DOM nodes: </span><span id="b-dom" class="val">—</span></div>
+    <div><span class="label">JS heap: </span><span id="b-mem" class="val">—</span></div>
+    <hr>
+    <div><span class="label">Total items: </span><span id="b-total" class="val">—</span></div>
+    <div><span class="label">Visible: </span><span id="b-visible" class="val">—</span></div>
+    <div><span class="label">Window: </span><span id="b-window" class="val">—</span></div>
+    <div><span class="label">Scroll: </span><span id="b-scroll" class="val">—</span></div>
+  </div>
+
+  <script src="/magnetic.js"></script>
+  <script>
+    (function() {
+      var t0 = performance.now();
+
+      // Connect
+      Magnetic.connect("/sse", "#app");
+
+      // Benchmark: TTI
+      var tti = performance.now() - t0;
+      document.getElementById("b-tti").textContent = tti.toFixed(1) + "ms";
+      document.getElementById("b-tti").className = "val " + (tti < 100 ? "good" : tti < 300 ? "warn" : "bad");
+
+      // Benchmark: SSR to JS hydrate time
+      var hydrate = performance.now();
+      requestAnimationFrame(function() {
+        var dt = performance.now() - hydrate;
+        document.getElementById("b-hydrate").textContent = dt.toFixed(1) + "ms";
+        document.getElementById("b-hydrate").className = "val " + (dt < 32 ? "good" : dt < 100 ? "warn" : "bad");
+      });
+
+      // Benchmark: FPS counter
+      var frames = 0, lastFps = performance.now(), fpsList = [];
+      function fpsLoop() {
+        frames++;
+        var now = performance.now();
+        if (now - lastFps >= 500) {
+          var fps = Math.round(frames * 1000 / (now - lastFps));
+          fpsList.push(fps);
+          if (fpsList.length > 20) fpsList.shift();
+          var avg = Math.round(fpsList.reduce(function(a,b){return a+b},0) / fpsList.length);
+          var el = document.getElementById("b-fps");
+          el.textContent = fps + " fps (avg " + avg + ")";
+          el.className = "val " + (fps >= 55 ? "good" : fps >= 30 ? "warn" : "bad");
+          frames = 0;
+          lastFps = now;
+        }
+        requestAnimationFrame(fpsLoop);
+      }
+      requestAnimationFrame(fpsLoop);
+
+      // Benchmark: frame time
+      var lastFrame = performance.now();
+      function frameLoop() {
+        var now = performance.now();
+        var dt = now - lastFrame;
+        lastFrame = now;
+        var el = document.getElementById("b-frame");
+        el.textContent = dt.toFixed(1) + "ms";
+        el.className = "val " + (dt < 18 ? "good" : dt < 34 ? "warn" : "bad");
+        requestAnimationFrame(frameLoop);
+      }
+      requestAnimationFrame(frameLoop);
+
+      // Benchmark: DOM + memory (every 1s)
+      setInterval(function() {
+        document.getElementById("b-dom").textContent = document.querySelectorAll("*").length;
+        if (performance.memory) {
+          var mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+          var el = document.getElementById("b-mem");
+          el.textContent = mb + " MB";
+          el.className = "val " + (mb < 20 ? "good" : mb < 50 ? "warn" : "bad");
+        } else {
+          document.getElementById("b-mem").textContent = "N/A";
+        }
+        // Read bench data from DOM
+        var bd = document.querySelector(".bench-data");
+        if (bd) {
+          document.getElementById("b-total").textContent = bd.dataset.total;
+          document.getElementById("b-visible").textContent = bd.dataset.visible + " cards";
+          document.getElementById("b-window").textContent = bd.dataset.start + "–" + bd.dataset.end;
+        }
+      }, 1000);
+
+      // Load generic transport WASM (1.1KB — snapshot cache + dedup)
+      Magnetic.loadWasm("/transport.wasm");
+
+      // Scroll event → direct POST to server, apply response immediately
+      var scrollTimer = null;
+      document.addEventListener("scroll", function(e) {
+        var scroller = document.getElementById("scroller") || e.target;
+        if (!scroller) return;
+        document.getElementById("b-scroll").textContent = Math.round(scroller.scrollTop) + "px";
+
+        if (!scrollTimer) {
+          scrollTimer = setTimeout(function() {
+            scrollTimer = null;
+            var st = scroller.scrollTop || 0;
+            var vh = scroller.clientHeight || window.innerHeight;
+            fetch("/actions/on_scroll", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({action:"on_scroll", payload:{scrollTop: st, viewportHeight: vh}})
+            }).then(function(r) { return r.json(); })
+              .then(function(snap) { if (snap && snap.root) Magnetic._apply(snap); })
+              .catch(function(){});
+          }, 32);
+        }
+      }, true);
+    })();
+  </script>
+</body>
+</html>

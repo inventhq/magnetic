@@ -1,0 +1,4 @@
+{
+  "name": "task-board",
+  "server": "http://localhost:3003"
+}

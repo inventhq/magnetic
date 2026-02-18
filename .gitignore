@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+*.wasm
+
+# Hashed assets
+.hashed/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# npm binary download
+js/packages/magnetic-cli/bin/magnetic-v8-server
+js/packages/magnetic-cli/bin/.version
+
+# Scaffolded apps (examples, not core)
+apps/my-todo-app/
