@@ -359,9 +359,13 @@ impl Reply {
 }
 
 pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
-    let platform = v8::new_default_platform(0, false).make_shared();
-    v8::V8::initialize_platform(platform);
-    v8::V8::initialize();
+    use std::sync::Once;
+    static V8_INIT: Once = Once::new();
+    V8_INIT.call_once(|| {
+        let platform = v8::new_default_platform(0, false).make_shared();
+        v8::V8::initialize_platform(platform);
+        v8::V8::initialize();
+    });
 
     let mut isolate = v8::Isolate::new(v8::CreateParams::default());
 
