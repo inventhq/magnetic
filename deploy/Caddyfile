@@ -20,11 +20,13 @@
 
 # Control plane API
 api.fujs.dev {
+	encode gzip zstd
 	reverse_proxy localhost:4000
 }
 
 # Platform homepage / marketing site
 fujs.dev {
+	encode gzip zstd
 	reverse_proxy localhost:4000
 }
 
@@ -36,6 +38,8 @@ fujs.dev {
 	tls {
 		dns cloudflare {env.CF_API_TOKEN}
 	}
+
+	encode gzip zstd
 
 	# Extract subdomain and rewrite path
 	@subdomain host *.fujs.dev
