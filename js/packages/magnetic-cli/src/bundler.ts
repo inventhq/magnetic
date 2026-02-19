@@ -44,6 +44,7 @@ export async function bundleApp(opts: BundleOptions): Promise<BundleResult> {
     const serverPkg = join(opts.monorepoRoot, 'js/packages/magnetic-server/src');
     alias['@magneticjs/server'] = serverPkg;
     alias['@magneticjs/server/jsx-runtime'] = join(serverPkg, 'jsx-runtime.ts');
+    alias['@magneticjs/server/router'] = join(serverPkg, 'router.ts');
   }
 
   const result = await build({

@@ -58,7 +58,7 @@ export function scaffold(dest, opts = {}) {
       '@magneticjs/server': '^0.1.3',
     },
     devDependencies: {
-      '@magneticjs/cli': '^0.1.6',
+      '@magneticjs/cli': '^0.1.7',
     },
   }, null, 2) + '\n');
 
