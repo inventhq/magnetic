@@ -64,6 +64,7 @@ The server sends JSON DOM snapshots. The SDK maps them to Compose:
 | `ul`, `ol` | `LazyColumn` |
 | `li` | `Row` |
 | `nav` | `Row` |
+| `hr` | `HorizontalDivider` |
 
 ## Advanced Usage
 
@@ -106,6 +107,15 @@ val state by client.connectionState.collectAsStateWithLifecycle()
 // ConnectionState.CONNECTING, CONNECTED, DISCONNECTED, ERROR
 ```
 
+### Navigation
+
+```kotlin
+// Programmatic navigation
+client.navigate("/about")
+```
+
+Links (`<a href="/about">`) automatically trigger navigation via the `onNavigate` callback.
+
 ## Emulator Setup
 
 When running in the Android emulator, `localhost` refers to the emulator itself. Use `10.0.2.2` to reach the host machine:
@@ -117,11 +127,37 @@ MagneticView(
 )
 ```
 
+For a physical device on the same network, use your Mac's local IP:
+
+```kotlin
+MagneticView(
+    serverUrl = "http://192.168.1.100:3003",
+    modifier = Modifier.fillMaxSize()
+)
+```
+
+## Server Protocol
+
+The SDK communicates with the Magnetic server using:
+
+- **SSE** (`GET /sse`): Receives `event: message\ndata: {"root": {...}}\n\n` snapshots
+- **Actions** (`POST /actions/{action_name}`): Sends `{"key": "value"}` payload
+- **Navigate** (`POST /actions/navigate`): Sends `{"path": "/route"}`
+
+These match the exact protocol used by the web client (`magnetic.js`) and the iOS/macOS SDK.
+
 ## Requirements
 
 - Android API 26+ (Android 8.0)
 - Jetpack Compose with Material3
 - Internet permission (added by SDK manifest)
+
+## Dependencies
+
+- **OkHttp 4.12** — HTTP client + SSE
+- **kotlinx.serialization 1.6** — JSON parsing
+- **kotlinx.coroutines 1.7** — Async/Flow
+- **Compose BOM 2024.01** — UI rendering
 
 ## Developer writes ZERO native UI code
 
