@@ -39,8 +39,23 @@ export async function startDev(opts: DevOptions): Promise<void> {
   // Find the V8 server binary
   const serverBin = opts.serverBin || findServerBinary(monorepoRoot || appDir);
   if (!serverBin) {
-    console.error('[magnetic] Cannot find magnetic-v8-server binary.');
-    console.error('  Build it with: cargo build --release -p magnetic-v8-server');
+    console.error('');
+    console.error('  ╔══════════════════════════════════════════════════════════════╗');
+    console.error('  ║  MAGNETIC: Server binary not found                          ║');
+    console.error('  ╚══════════════════════════════════════════════════════════════╝');
+    console.error('');
+    console.error('  `magnetic dev` requires the magnetic-v8-server binary.');
+    console.error('  It should have been downloaded during `npm install @magneticjs/cli`.');
+    console.error('');
+    console.error('  To fix:');
+    console.error('    npm rebuild @magneticjs/cli');
+    console.error('');
+    console.error('  Or build from source:');
+    console.error('    git clone https://github.com/inventhq/magnetic.git');
+    console.error('    cd magnetic/rs/crates/magnetic-v8-server');
+    console.error('    cargo build --release');
+    console.error('    cp target/release/magnetic-v8-server $(npm root -g)/@magneticjs/cli/bin/');
+    console.error('');
     process.exit(1);
   }
 

@@ -69,24 +69,52 @@ console.log(`[magnetic] ${url}`);
 
 try {
   mkdirSync(binDir, { recursive: true });
-  // Use curl or wget — available on all platforms
+
+  // Download — curl with -L follows GitHub's 302 redirect
+  let downloaded = false;
   try {
-    execSync(`curl -fsSL "${url}" | tar xz -C "${binDir}"`, { stdio: 'pipe' });
-  } catch {
-    execSync(`wget -qO- "${url}" | tar xz -C "${binDir}"`, { stdio: 'pipe' });
+    execSync(`curl -fsSL "${url}" -o "${join(binDir, filename)}"`, { stdio: 'pipe' });
+    execSync(`tar xzf "${join(binDir, filename)}" -C "${binDir}"`, { stdio: 'pipe' });
+    downloaded = true;
+  } catch (e1) {
+    try {
+      execSync(`wget -q "${url}" -O "${join(binDir, filename)}"`, { stdio: 'pipe' });
+      execSync(`tar xzf "${join(binDir, filename)}" -C "${binDir}"`, { stdio: 'pipe' });
+      downloaded = true;
+    } catch (e2) {
+      // Both failed
+    }
   }
 
-  if (existsSync(binPath)) {
+  // Clean up tarball
+  try { execSync(`rm -f "${join(binDir, filename)}"`, { stdio: 'pipe' }); } catch {}
+
+  if (downloaded && existsSync(binPath)) {
     chmodSync(binPath, 0o755);
     writeFileSync(versionFile, version);
     console.log(`[magnetic] ✓ Server binary v${version} installed: ${binPath}`);
   } else {
-    throw new Error('Binary not found after extraction');
+    throw new Error(`Download failed or binary not found after extraction`);
   }
 } catch (err) {
-  console.warn(`[magnetic] Could not download prebuilt binary: ${err.message}`);
-  console.warn('[magnetic] The CLI will still work, but you need the server binary for `magnetic dev`.');
-  console.warn('[magnetic] Build from source: cargo build --release -p magnetic-v8-server');
-  // Don't fail the install — just warn
+  console.error('');
+  console.error('  ╔══════════════════════════════════════════════════════════════╗');
+  console.error('  ║  MAGNETIC: Server binary download failed                    ║');
+  console.error('  ╚══════════════════════════════════════════════════════════════╝');
+  console.error('');
+  console.error(`  URL: ${url}`);
+  console.error(`  Error: ${err.message}`);
+  console.error('');
+  console.error('  `magnetic dev` will NOT work without the server binary.');
+  console.error('');
+  console.error('  To fix, either:');
+  console.error('    1. Re-run: npm rebuild @magneticjs/cli');
+  console.error('    2. Build from source:');
+  console.error('       git clone https://github.com/inventhq/magnetic.git');
+  console.error('       cd magnetic/rs/crates/magnetic-v8-server');
+  console.error('       cargo build --release');
+  console.error('       cp target/release/magnetic-v8-server $(npm root -g)/@magneticjs/cli/bin/');
+  console.error('');
+  // Don't fail npm install — but make the error impossible to miss
   process.exit(0);
 }
