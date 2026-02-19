@@ -27,33 +27,35 @@ export interface BundleResult {
 }
 
 /**
- * Copy transport.wasm into the app's public/ directory.
- * Looks in @magneticjs/server/wasm/ (npm) or monorepo path.
+ * Copy a framework asset into the app's public/ directory.
+ * Searches monorepo, npm-installed @magneticjs/server, and CLI's own wasm/ dir.
  */
-export function copyTransportWasm(appDir: string, monorepoRoot?: string): boolean {
+function copyFrameworkAsset(filename: string, appDir: string, monorepoRoot?: string): boolean {
   const publicDir = join(appDir, 'public');
-  const dest = join(publicDir, 'transport.wasm');
+  const dest = join(publicDir, filename);
 
   // Already there — skip
   if (existsSync(dest)) return true;
 
-  // Candidate locations for the WASM file
   const candidates: string[] = [];
 
-  // Monorepo path
+  // Monorepo paths
   if (monorepoRoot) {
-    candidates.push(join(monorepoRoot, 'js/packages/magnetic-server/wasm/transport.wasm'));
+    candidates.push(join(monorepoRoot, 'js/packages/magnetic-server/wasm', filename));
+    if (filename === 'magnetic.js') {
+      candidates.push(join(monorepoRoot, 'js/packages/sdk-web-runtime/dist/magnetic.min.js'));
+    }
   }
 
   // npm-installed @magneticjs/server
   try {
     const require = createRequire(join(appDir, 'package.json'));
     const serverPkg = require.resolve('@magneticjs/server');
-    candidates.push(join(dirname(serverPkg), '..', 'wasm', 'transport.wasm'));
+    candidates.push(join(dirname(serverPkg), '..', 'wasm', filename));
   } catch {}
 
   // CLI's own bundled copy (sibling to dist/)
-  candidates.push(join(import.meta.dirname || __dirname, '..', 'wasm', 'transport.wasm'));
+  candidates.push(join(import.meta.dirname || __dirname, '..', 'wasm', filename));
 
   for (const src of candidates) {
     if (existsSync(src)) {
@@ -64,6 +66,20 @@ export function copyTransportWasm(appDir: string, monorepoRoot?: string): boolea
   }
 
   return false;
+}
+
+/**
+ * Copy transport.wasm into the app's public/ directory.
+ */
+export function copyTransportWasm(appDir: string, monorepoRoot?: string): boolean {
+  return copyFrameworkAsset('transport.wasm', appDir, monorepoRoot);
+}
+
+/**
+ * Copy magnetic.js client runtime into the app's public/ directory.
+ */
+export function copyClientRuntime(appDir: string, monorepoRoot?: string): boolean {
+  return copyFrameworkAsset('magnetic.js', appDir, monorepoRoot);
 }
 
 /**
@@ -79,7 +95,8 @@ export async function bundleApp(opts: BundleOptions): Promise<BundleResult> {
     mkdirSync(outDir, { recursive: true });
   }
 
-  // Ensure transport.wasm is in public/
+  // Ensure framework assets are in public/
+  copyClientRuntime(opts.appDir, opts.monorepoRoot);
   copyTransportWasm(opts.appDir, opts.monorepoRoot);
 
   // Resolve @magneticjs/server — in monorepo use actual path, otherwise npm package
