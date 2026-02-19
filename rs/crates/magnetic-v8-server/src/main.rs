@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Once};
 use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -358,14 +358,20 @@ impl Reply {
     }
 }
 
-pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
-    use std::sync::Once;
+/// Initialize V8's global platform exactly once per process.
+/// Safe to call from any thread, any number of times.
+pub fn ensure_v8_initialized() {
     static V8_INIT: Once = Once::new();
     V8_INIT.call_once(|| {
         let platform = v8::new_default_platform(0, false).make_shared();
         v8::V8::initialize_platform(platform);
         v8::V8::initialize();
+        eprintln!("[magnetic-v8] V8 engine initialized");
     });
+}
+
+pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
+    ensure_v8_initialized();
 
     let mut isolate = v8::Isolate::new(v8::CreateParams::default());
 

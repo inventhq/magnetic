@@ -120,6 +120,11 @@ pub fn run_platform(args: &[String]) {
     // Ensure data directory exists
     let _ = std::fs::create_dir_all(&data_dir);
 
+    // Initialize V8 once on the main thread before spawning any app threads.
+    // This prevents a race condition where concurrent v8_thread spawns
+    // could SEGV if V8 internals aren't fully ready.
+    crate::ensure_v8_initialized();
+
     // Build middleware
     let mut middleware = MiddlewareStack::new();
     middleware.add(logger_middleware());
