@@ -38,4 +38,5 @@ console.log(`\n✓ Created Magnetic app: ${name}`);
 console.log(`  ${dir}\n`);
 console.log(`  Next steps:`);
 console.log(`    cd ${name}`);
-console.log(`    magnetic dev\n`);
+console.log(`    npm install`);
+console.log(`    npx magnetic dev\n`);

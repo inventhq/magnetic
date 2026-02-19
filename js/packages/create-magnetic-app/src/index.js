@@ -45,6 +45,23 @@ export function scaffold(dest, opts = {}) {
     server: 'http://localhost:3003',
   }, null, 2) + '\n');
 
+  // package.json
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name,
+    version: '0.1.0',
+    private: true,
+    scripts: {
+      dev: 'magnetic dev',
+      build: 'magnetic build',
+    },
+    dependencies: {
+      '@magneticjs/server': '^0.1.3',
+    },
+    devDependencies: {
+      '@magneticjs/cli': '^0.1.6',
+    },
+  }, null, 2) + '\n');
+
   // tsconfig.json for IDE support
   writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
