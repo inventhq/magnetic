@@ -57,32 +57,24 @@ impl AppHandle {
         *self.last_activity.lock().unwrap() = Instant::now();
     }
 
-    /// Ensure V8 thread is running. Returns sender or error string.
+    /// Ensure V8 thread is available. Returns sender or error string.
     fn ensure_warm(&self) -> Result<mpsc::Sender<V8Request>, String> {
-        let mut guard = self.v8_tx.lock().unwrap();
+        let guard = self.v8_tx.lock().unwrap();
         if let Some(ref tx) = *guard {
+            if self.parked.load(Ordering::Acquire) {
+                self.parked.store(false, Ordering::Release);
+                eprintln!("[platform:{}] unparked (request)", self.name);
+            }
             return Ok(tx.clone());
         }
-        // Cold start: reload from disk
-        let cold_start = Instant::now();
-        let bundle_path = format!("{}/{}/bundle.js", self.data_dir, self.name);
-        let js_source = std::fs::read_to_string(&bundle_path)
-            .map_err(|e| format!("cold start read: {}", e))?;
-        let (tx, rx) = mpsc::channel();
-        let js = js_source;
-        thread::spawn(move || v8_thread(js, rx));
-        *guard = Some(tx.clone());
-        self.parked.store(false, Ordering::Release);
-        let ms = cold_start.elapsed().as_millis();
-        eprintln!("[platform:{}] cold start: {}ms", self.name, ms);
-        Ok(tx)
+        Err(format!("V8 thread not available for '{}'", self.name))
     }
 
-    /// Park the V8 thread (drop sender, isolate exits when channel closes).
+    /// Mark app as parked (idle). The V8 thread stays alive — V8's global
+    /// platform cannot be reinitialized, so we never kill V8 threads.
+    /// The thread blocks on rx.recv() which costs zero CPU when idle.
     fn park(&self) {
-        let mut guard = self.v8_tx.lock().unwrap();
-        if guard.is_some() {
-            *guard = None;
+        if !self.parked.load(Ordering::Acquire) {
             self.parked.store(true, Ordering::Release);
             eprintln!("[platform:{}] parked (idle)", self.name);
         }
@@ -574,7 +566,9 @@ fn handle_app_sse(
 
     let path = app.current_path.lock().unwrap().clone();
     let reply = Reply::new();
-    tx.send(V8Request::Render { path, reply: reply.clone() }).unwrap();
+    if tx.send(V8Request::Render { path, reply: reply.clone() }).is_err() {
+        return stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
+    }
     let dom_json = v8_result_to_json(reply.recv(), None);
     let snapshot = format!("{{\"root\":{}}}", dom_json);
     write_sse_event(&mut stream, snapshot.as_bytes())?;
@@ -620,15 +614,25 @@ fn handle_app_action(
 
         *app.current_path.lock().unwrap() = nav_path.clone();
         let reply = Reply::new();
-        tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).unwrap();
+        if tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).is_err() {
+            let msg = "{\"error\":\"V8 thread unavailable\"}";
+            let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+            stream.write_all(resp.as_bytes())?;
+            return stream.write_all(msg.as_bytes());
+        }
         let dom_json = v8_result_to_json(reply.recv(), None);
         snapshot = format!("{{\"root\":{}}}", dom_json);
     } else {
         let path = app.current_path.lock().unwrap().clone();
         let reply = Reply::new();
-        tx.send(V8Request::Reduce {
+        if tx.send(V8Request::Reduce {
             action: action.clone(), payload, path, reply: reply.clone(),
-        }).unwrap();
+        }).is_err() {
+            let msg = "{\"error\":\"V8 thread unavailable\"}";
+            let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+            stream.write_all(resp.as_bytes())?;
+            return stream.write_all(msg.as_bytes());
+        }
         let dom_json = v8_result_to_json(reply.recv(), Some(&action));
         snapshot = format!("{{\"root\":{}}}", dom_json);
     }
@@ -716,9 +720,14 @@ fn handle_app_get(
     *app.current_path.lock().unwrap() = route_path.to_string();
 
     let reply = Reply::new();
-    tx.send(V8Request::Render {
+    if tx.send(V8Request::Render {
         path: route_path.to_string(), reply: reply.clone(),
-    }).unwrap();
+    }).is_err() {
+        let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
+        let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n", msg.len());
+        stream.write_all(resp.as_bytes())?;
+        return stream.write_all(msg.as_bytes());
+    }
 
     let dom = match reply.recv() {
         V8Result::Ok(json) => {
