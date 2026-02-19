@@ -285,6 +285,9 @@ fn handle_platform_connection(
         }
     }
 
+    // Detect subdomain access (Caddy sets X-Subdomain header on rewritten requests)
+    let via_subdomain = raw_headers.get("x-subdomain").cloned();
+
     // Run middleware
     let mut ctx = MagneticContext::from_request(method, path, raw_headers);
     platform.middleware.run(&mut ctx);
@@ -418,6 +421,7 @@ fn handle_platform_connection(
                 ("GET", p) => {
                     let result = handle_app_get(
                         &mut stream, &app, app_name, p, &extra_headers,
+                        via_subdomain.is_some(),
                     );
                     let ms = log_start.elapsed().as_millis();
                     eprintln!("[platform] {} /apps/{}{} → ({}ms)", method, app_name, p, ms);
@@ -657,6 +661,7 @@ fn handle_app_get(
     app_name: &str,
     path: &str,
     extra_headers: &HashMap<String, String>,
+    via_subdomain: bool,
 ) -> std::io::Result<()> {
     // Static files
     let has_ext = path.contains('.') && !path.ends_with('/');
@@ -731,17 +736,23 @@ fn handle_app_get(
         }
     };
 
-    // Framework assets are embedded in the binary — prefix with /apps/<name>/
-    let app_prefix = format!("/apps/{}", app_name);
-    let magnetic_js = format!("{}/magnetic.js", app_prefix);
-    let wasm_url = Some(format!("{}/transport.wasm", app_prefix));
+    // When accessed via subdomain, emit root-relative paths (Caddy rewrites
+    // the URL so the platform sees /apps/{name}/... but the browser is at /).
+    // When accessed directly via /apps/{name}/, use the prefixed paths.
+    let prefix = if via_subdomain {
+        String::new() // root-relative: /magnetic.js, /sse, etc.
+    } else {
+        format!("/apps/{}", app_name) // path-prefixed: /apps/{name}/magnetic.js
+    };
+    let magnetic_js = format!("{}/magnetic.js", prefix);
+    let wasm_url = Some(format!("{}/transport.wasm", prefix));
 
     let page = render_page(&PageOptions {
         root: dom,
         scripts: vec![magnetic_js],
         styles: vec![],
         inline_css: app.inline_css.clone(),
-        sse_url: Some(format!("{}/sse", app_prefix)),
+        sse_url: Some(format!("{}/sse", prefix)),
         mount_selector: Some("#app".to_string()),
         wasm_url,
         title: Some(format!("{} | Magnetic", app_name)),

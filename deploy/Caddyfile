@@ -30,13 +30,20 @@ fujs.dev {
 
 # Wildcard: all app subdomains
 # Uses Cloudflare DNS challenge for wildcard TLS cert.
-# Routes all subdomains to the local platform server via control plane.
+# Rewrites /{path} → /apps/{subdomain}/{path} so the platform server
+# routes correctly, and passes X-Subdomain so SSR emits root-relative paths.
 *.fujs.dev {
 	tls {
 		dns cloudflare {env.CF_API_TOKEN}
 	}
 
-	# Proxy to platform server — Caddy rewrites based on Host header
-	# The control plane's /api/resolve/:subdomain tells us where to route
-	reverse_proxy localhost:3003
+	# Extract subdomain and rewrite path
+	@subdomain host *.fujs.dev
+	handle @subdomain {
+		# Rewrite: /foo → /apps/{subdomain}/foo
+		rewrite * /apps/{labels.2}{uri}
+		reverse_proxy localhost:3003 {
+			header_up X-Subdomain {labels.2}
+		}
+	}
 }
