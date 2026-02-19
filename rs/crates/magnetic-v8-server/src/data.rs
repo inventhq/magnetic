@@ -64,6 +64,9 @@ pub struct DataSourceConfig {
     pub page: String,
     #[serde(default)]
     pub auth: bool,
+    /// SSR timeout: if fetch takes longer, render without this data.
+    /// Format: "100ms", "1s". Default: no timeout (blocking).
+    pub timeout: Option<String>,
 }
 
 fn default_source_type() -> String { "fetch".into() }
@@ -232,6 +235,80 @@ pub fn fetch_page_data_with_token(ctx: &DataContext, path: &str, auth_token: Opt
         }
     }
     count
+}
+
+/// Fetch data with timeout support for streaming SSR.
+/// Sources with a `timeout` value are fetched in parallel threads.
+/// If any source exceeds its timeout, the result is returned without it
+/// (the source key is set to null + __loading flag), and the timed-out
+/// sources are returned in the second Vec for background completion.
+pub fn fetch_page_data_streaming(
+    ctx: &DataContext,
+    path: &str,
+    auth_token: Option<&str>,
+) -> Vec<DataSourceConfig> {
+    let sources: Vec<DataSourceConfig> = ctx.sources_for_page(path)
+        .into_iter()
+        .cloned()
+        .collect();
+
+    let mut pending: Vec<DataSourceConfig> = Vec::new();
+    let mut handles: Vec<(DataSourceConfig, std::sync::mpsc::Receiver<Result<serde_json::Value, String>>)> = Vec::new();
+
+    for source in &sources {
+        let timeout = source.timeout.as_ref().map(|t| parse_duration(t));
+        if let Some(dur) = timeout {
+            if !dur.is_zero() {
+                // Fetch in background thread with timeout
+                let (tx, rx) = std::sync::mpsc::channel();
+                let src = source.clone();
+                let token = auth_token.map(String::from);
+                thread::spawn(move || {
+                    let result = fetch_data_source(&src, token.as_deref());
+                    let _ = tx.send(result);
+                });
+                handles.push((source.clone(), rx));
+                continue;
+            }
+        }
+        // No timeout — fetch synchronously (blocking)
+        match fetch_data_source(source, auth_token) {
+            Ok(value) => ctx.set_value(&source.key, value),
+            Err(e) => {
+                eprintln!("[data] error: {}", e);
+                ctx.set_value(&source.key, serde_json::json!({ "__error": e }));
+            }
+        }
+    }
+
+    // Wait for timed-out sources
+    for (source, rx) in handles {
+        let timeout = parse_duration(source.timeout.as_deref().unwrap_or("100ms"));
+        match rx.recv_timeout(timeout) {
+            Ok(Ok(value)) => ctx.set_value(&source.key, value),
+            Ok(Err(e)) => {
+                eprintln!("[data] error: {}", e);
+                ctx.set_value(&source.key, serde_json::json!({ "__error": e }));
+            }
+            Err(_) => {
+                // Timeout — mark as loading, add to pending for background completion
+                eprintln!("[data] '{}' timed out, rendering with loading state", source.key);
+                ctx.set_value(&source.key, serde_json::Value::Null);
+                pending.push(source);
+            }
+        }
+    }
+
+    // Set __loading flag if any sources are pending
+    if !pending.is_empty() {
+        let loading_keys: Vec<String> = pending.iter().map(|s| s.key.clone()).collect();
+        ctx.set_value("__loading", serde_json::json!(loading_keys));
+    } else {
+        // Remove loading flag if it was set from a previous render
+        ctx.values.write().unwrap().remove("__loading");
+    }
+
+    pending
 }
 
 /// Forward an action to an external API endpoint.

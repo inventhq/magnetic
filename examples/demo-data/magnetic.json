@@ -1,0 +1,16 @@
+{
+  "name": "demo-data",
+  "data": {
+    "posts": {
+      "url": "https://jsonplaceholder.typicode.com/posts?_limit=5",
+      "page": "*"
+    },
+    "users": {
+      "url": "https://jsonplaceholder.typicode.com/users?_limit=3",
+      "page": "/users"
+    }
+  },
+  "actions": {
+    "create_post": "POST https://jsonplaceholder.typicode.com/posts"
+  }
+}

@@ -90,7 +90,9 @@ export function toViewModel(state: AppState) {
     })
     .map(t => ({
       ...t,
-      completedClass: t.completed ? 'completed' : '',
+      cardClass: t.completed ? 'opacity-50' : '',
+      titleClass: t.completed ? 'line-through fg-muted' : '',
+      checkClass: t.completed ? 'check-done' : '',
       checkmark: t.completed ? '✓' : '○',
     }));
 
@@ -101,9 +103,9 @@ export function toViewModel(state: AppState) {
     ...state,
     visibleTasks,
     taskCount: `${active} active, ${done} done`,
-    filterAllClass: state.filter === 'all' ? 'active' : '',
-    filterActiveClass: state.filter === 'active' ? 'active' : '',
-    filterDoneClass: state.filter === 'done' ? 'active' : '',
+    filterAllClass: state.filter === 'all' ? 'bg-primary fg-heading border-primary' : 'bg-raised fg-muted',
+    filterActiveClass: state.filter === 'active' ? 'bg-primary fg-heading border-primary' : 'bg-raised fg-muted',
+    filterDoneClass: state.filter === 'done' ? 'bg-primary fg-heading border-primary' : 'bg-raised fg-muted',
     isEmpty: visibleTasks.length === 0,
     emptyMessage:
       state.filter === 'active'

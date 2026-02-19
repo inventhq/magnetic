@@ -21,6 +21,8 @@ export interface DataSource {
   page: string;
   /** Whether to inject auth token from session */
   auth: boolean;
+  /** SSR timeout: if fetch takes longer, render loading state. E.g. "100ms", "1s" */
+  timeout?: string;
 }
 
 // ── Action mapping types ────────────────────────────────────────────
@@ -76,6 +78,8 @@ export interface MagneticAppConfig {
   auth?: AuthConfig;
   data: DataSource[];
   actions: ActionMapping[];
+  /** Routes to pre-render as static HTML at build time */
+  prerender?: string[];
 }
 
 // ── Parser ──────────────────────────────────────────────────────────
@@ -128,6 +132,9 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
 
   result.name = raw.name;
   result.server = raw.server;
+  if (Array.isArray(raw.prerender)) {
+    result.prerender = raw.prerender;
+  }
 
   // Parse auth
   if (raw.auth) {
@@ -160,6 +167,7 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
         refresh: src.refresh,
         page: src.page || '*',
         auth: src.auth === true,
+        timeout: src.timeout,
       });
     }
   }
@@ -172,6 +180,21 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
   }
 
   return result;
+}
+
+// ── Design config (design.json) ──────────────────────────────────────
+
+/**
+ * Read design.json from an app directory if it exists.
+ * Returns the raw JSON string (for embedding in bridge code), or null.
+ */
+export function readDesignJson(appDir: string): string | null {
+  const designPath = join(appDir, 'design.json');
+  if (!existsSync(designPath)) return null;
+  // Read and re-stringify to validate it's valid JSON
+  const raw = readFileSync(designPath, 'utf-8');
+  JSON.parse(raw); // throws if invalid
+  return raw;
 }
 
 /**

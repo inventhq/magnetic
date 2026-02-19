@@ -322,6 +322,13 @@ pub enum V8Request {
     SetData { json: String, reply: Arc<Reply> },
     /// Inject data then render (combined for atomicity)
     RenderWithData { path: String, data_json: String, reply: Arc<Reply> },
+    /// Call an API route handler (server/api/*.ts)
+    ApiCall { method: String, path: String, body: String, reply: Arc<Reply> },
+    /// Call renderWithCSS(path) — returns {root: DomNode, css: string}
+    /// Falls back to render(path) if renderWithCSS is not exported
+    RenderWithCSS { path: String, reply: Arc<Reply> },
+    /// Inject data then call renderWithCSS (combined for SSR with data)
+    RenderWithDataAndCSS { path: String, data_json: String, reply: Arc<Reply> },
 }
 
 pub struct Reply {
@@ -402,7 +409,61 @@ pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
                 let result = v8_call_render(&mut isolate, &global_context, &path);
                 reply.send(result);
             }
+            V8Request::ApiCall { method, path, body, reply } => {
+                let result = v8_call_api(&mut isolate, &global_context, &method, &path, &body);
+                reply.send(result);
+            }
+            V8Request::RenderWithCSS { path, reply } => {
+                let result = v8_call_render_with_css(&mut isolate, &global_context, &path);
+                reply.send(result);
+            }
+            V8Request::RenderWithDataAndCSS { path, data_json, reply } => {
+                let set_result = v8_call_set_data(&mut isolate, &global_context, &data_json);
+                if let V8Result::Err(e) = set_result {
+                    eprintln!("[magnetic-v8] setData error: {}", e);
+                }
+                let result = v8_call_render_with_css(&mut isolate, &global_context, &path);
+                reply.send(result);
+            }
         }
+    }
+}
+
+/// Call renderWithCSS(path) — returns JSON string of {root: DomNode, css: string}
+/// Falls back to render(path) wrapped as {root: DomNode} if renderWithCSS is not available
+fn v8_call_render_with_css(
+    isolate: &mut v8::OwnedIsolate,
+    context: &v8::Global<v8::Context>,
+    path: &str,
+) -> V8Result {
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    let context = v8::Local::new(handle_scope, context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+    // Try renderWithCSS first, fall back to render if not available
+    let call_code = format!(
+        r#"(function() {{ try {{ if (typeof globalThis.MagneticApp.renderWithCSS === 'function') {{ return JSON.stringify(globalThis.MagneticApp.renderWithCSS("{0}")); }} else {{ var dom = globalThis.MagneticApp.render("{0}"); return JSON.stringify({{root: dom, css: null}}); }} }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e)}}); }} }})()"#,
+        path.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+
+    let code = v8::String::new(scope, &call_code).unwrap();
+    let script = match v8::Script::compile(scope, code, None) {
+        Some(s) => s,
+        None => return V8Result::Err("Failed to compile renderWithCSS call".into()),
+    };
+    match script.run(scope) {
+        Some(result) => {
+            let json = result.to_rust_string_lossy(scope);
+            if json.contains("\"__error\"") {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json) {
+                    if let Some(msg) = val.get("__error").and_then(|v| v.as_str()) {
+                        return V8Result::Err(msg.to_string());
+                    }
+                }
+            }
+            V8Result::Ok(json)
+        }
+        None => V8Result::Err("renderWithCSS() returned undefined".into()),
     }
 }
 
@@ -520,6 +581,38 @@ fn v8_call_reduce(
             V8Result::Ok(out)
         }
         None => V8Result::Err("reduce() returned undefined".into()),
+    }
+}
+
+/// Call handleApi(method, path, body) — API route handler in V8
+fn v8_call_api(
+    isolate: &mut v8::OwnedIsolate,
+    context: &v8::Global<v8::Context>,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> V8Result {
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    let context = v8::Local::new(handle_scope, context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+    let safe_method = method.replace('\\', "\\\\").replace('"', "\\\"");
+    let safe_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+    let safe_body = body.replace('\\', "\\\\").replace('\'', "\\'");
+
+    let call_code = format!(
+        r#"(function() {{ try {{ if (!globalThis.MagneticApp || !globalThis.MagneticApp.handleApi) return JSON.stringify({{__error:"No API routes defined",__status:404}}); return globalThis.MagneticApp.handleApi("{}", "{}", '{}'); }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e), __status: 500}}); }} }})()"#,
+        safe_method, safe_path, safe_body
+    );
+
+    let code = v8::String::new(scope, &call_code).unwrap();
+    let script = match v8::Script::compile(scope, code, None) {
+        Some(s) => s,
+        None => return V8Result::Err("Failed to compile handleApi call".into()),
+    };
+    match script.run(scope) {
+        Some(result) => V8Result::Ok(result.to_rust_string_lossy(scope)),
+        None => V8Result::Err("handleApi() returned undefined".into()),
     }
 }
 
@@ -875,25 +968,45 @@ fn handle_get(
     let route_path = path.split('?').next().unwrap_or("/");
     *server.current_path.lock().unwrap() = route_path.to_string();
 
+    // Use RenderWithCSS to get both DOM and generated CSS from V8
     let reply = Reply::new();
-    server.v8_tx.send(V8Request::Render {
+    server.v8_tx.send(V8Request::RenderWithCSS {
         path: route_path.to_string(), reply: reply.clone(),
     }).unwrap();
 
-    let dom = match reply.recv() {
+    let (dom, generated_css) = match reply.recv() {
         V8Result::Ok(json) => {
-            match serde_json::from_str::<DomNode>(&json) {
-                Ok(d) => d,
+            // Parse {root: DomNode, css: string|null}
+            match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(wrapper) => {
+                    let root_val = wrapper.get("root").cloned().unwrap_or(serde_json::Value::Null);
+                    let css_val = wrapper.get("css").and_then(|v| v.as_str()).map(String::from);
+                    match serde_json::from_value::<DomNode>(root_val) {
+                        Ok(d) => (d, css_val),
+                        Err(e) => {
+                            eprintln!("[magnetic-v8] render parse error: {}", e);
+                            (error_fallback(&format!("JSON parse error: {}", e), None), None)
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("[magnetic-v8] render parse error: {}", e);
-                    error_fallback(&format!("JSON parse error: {}", e), None)
+                    (error_fallback(&format!("JSON parse error: {}", e), None), None)
                 }
             }
         }
         V8Result::Err(e) => {
             eprintln!("[magnetic-v8] render error: {}", e);
-            error_fallback(&e, None)
+            (error_fallback(&e, None), None)
         }
+    };
+
+    // Merge CSS: generated CSS from design.json + user's style.css (if any)
+    let merged_css = match (&generated_css, &server.inline_css) {
+        (Some(gen), Some(user)) => Some(format!("{}{}", gen, user)),
+        (Some(gen), None) => Some(gen.clone()),
+        (None, Some(user)) => Some(user.clone()),
+        (None, None) => None,
     };
 
     // Framework assets are embedded in the binary — always available
@@ -904,7 +1017,7 @@ fn handle_get(
         root: dom,
         scripts: vec![magnetic_js],
         styles: vec![],
-        inline_css: server.inline_css.clone(),
+        inline_css: merged_css,
         sse_url: Some("/sse".to_string()),
         mount_selector: Some("#app".to_string()),
         wasm_url,

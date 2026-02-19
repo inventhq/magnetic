@@ -9,7 +9,7 @@ import { createInterface } from 'node:readline';
 import { scanApp, generateBridge } from './generator.ts';
 import { bundleApp, buildForDeploy } from './bundler.ts';
 import { startDev } from './dev.ts';
-import { parseAppConfig, serializeConfigForServer } from './config.ts';
+import { parseAppConfig, serializeConfigForServer, readDesignJson } from './config.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -132,15 +132,19 @@ async function main() {
       const buildStart = Date.now();
       const scan = scanApp(appDir, monorepoRoot || undefined);
       const appConfig = parseAppConfig(appDir);
-      log('info', `Scanned: ${scan.pages.length} pages, state: ${scan.statePath || 'none (using defaults)'}`);
+      log('info', `Scanned: ${scan.pages.length} pages, ${scan.layouts.length} layouts, state: ${scan.statePath || 'none (using defaults)'}`);
       if (appConfig.data.length > 0) log('info', `Data sources: ${appConfig.data.length}`);
       if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
+
+      // Read design.json for CSS framework
+      const designJson = readDesignJson(appDir);
+      if (designJson) log('info', 'Design tokens: design.json loaded');
 
       for (const page of scan.pages) {
         log('debug', `  route ${page.routePath.padEnd(15)} ← ${page.filePath}`);
       }
 
-      const bridgeCode = generateBridge(scan, appConfig);
+      const bridgeCode = generateBridge(scan, appConfig, designJson ?? undefined);
       log('debug', `Bridge generated: ${bridgeCode.split('\n').length} lines`);
 
       if (args.includes('--verbose')) {
@@ -159,6 +163,22 @@ async function main() {
       const kb = (result.sizeBytes / 1024).toFixed(1);
       const elapsed = Date.now() - buildStart;
       log('info', `✓ Built ${result.outPath} (${kb}KB) in ${elapsed}ms`);
+
+      // SSG: prerender configured routes to static HTML
+      if (appConfig.prerender && appConfig.prerender.length > 0) {
+        log('info', `Pre-rendering ${appConfig.prerender.length} routes...`);
+        const { prerenderRoutes } = await import('./prerender.ts');
+        const prerenderCount = await prerenderRoutes({
+          bundlePath: result.outPath,
+          outDir: join(appDir, 'dist'),
+          routes: appConfig.prerender,
+          title: appConfig.name || 'Magnetic App',
+          inlineCSS: undefined,
+          publicDir: join(appDir, 'public'),
+          log,
+        });
+        log('info', `✓ Pre-rendered ${prerenderCount} static HTML pages`);
+      }
       break;
     }
 
@@ -236,10 +256,12 @@ async function main() {
       log('info', `Building for deploy...`);
       const scan = scanApp(appDir, monorepoRoot || undefined);
       const appConfig = parseAppConfig(appDir);
-      log('info', `Scanned: ${scan.pages.length} pages, state: ${scan.statePath || 'none'}`);
+      log('info', `Scanned: ${scan.pages.length} pages, ${scan.layouts.length} layouts, state: ${scan.statePath || 'none'}`);
       if (appConfig.data.length > 0) log('info', `Data sources: ${appConfig.data.length}`);
       if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
-      const bridgeCode = generateBridge(scan, appConfig);
+      const pushDesignJson = readDesignJson(appDir);
+      if (pushDesignJson) log('info', 'Design tokens: design.json loaded');
+      const bridgeCode = generateBridge(scan, appConfig, pushDesignJson ?? undefined);
       const deploy = await buildForDeploy({ appDir, bridgeCode, monorepoRoot: monorepoRoot || undefined });
       const serverConfig = serializeConfigForServer(appConfig);
 

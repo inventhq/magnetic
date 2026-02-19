@@ -7,7 +7,9 @@ export interface Task {
 }
 
 export interface TaskView extends Task {
-  completedClass: string;
+  cardClass: string;
+  titleClass: string;
+  checkClass: string;
   checkmark: string;
 }
 

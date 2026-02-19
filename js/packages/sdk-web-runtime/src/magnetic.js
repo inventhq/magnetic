@@ -231,6 +231,19 @@
     if (status != "connected") queue.push(body);
   }
 
+  // --- Prefetching: warm server cache on link hover ---
+  var prefetched = {};
+  d.addEventListener("mouseenter", function(e) {
+    var t = e.target.closest("[data-prefetch]");
+    if (t) {
+      var href = t.getAttribute("data-prefetch");
+      if (href && !prefetched[href]) {
+        prefetched[href] = 1;
+        fetch(href, { method: "GET", headers: { "X-Prefetch": "1" } }).catch(function() {});
+      }
+    }
+  }, true);
+
   // --- Client-side routing: back/forward ---
   self.addEventListener("popstate", function() {
     send("navigate", { path: location.pathname + location.search });

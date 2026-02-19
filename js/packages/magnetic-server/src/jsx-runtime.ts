@@ -26,9 +26,11 @@ type Component = (props: any) => DomNode;
  * Client-side navigation link. Renders an <a> that magnetic.js intercepts
  * to do pushState + send navigate action (no full page reload).
  */
-export function Link(props: { href: string; children?: Child | Child[]; class?: string; [k: string]: unknown }): DomNode {
-  const { href, children, ...rest } = props;
-  return jsx('a', { ...rest, href, onClick: `navigate:${href}`, children }, undefined);
+export function Link(props: { href: string; prefetch?: boolean; children?: Child | Child[]; class?: string; [k: string]: unknown }): DomNode {
+  const { href, prefetch, children, ...rest } = props;
+  const extra: Record<string, unknown> = { ...rest, href, onClick: `navigate:${href}` };
+  if (prefetch) extra['data-prefetch'] = href;
+  return jsx('a', { ...extra, children }, undefined);
 }
 
 /**

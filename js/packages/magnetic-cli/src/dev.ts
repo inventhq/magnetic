@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { spawn, ChildProcess } from 'node:child_process';
 import { scanApp, generateBridge } from './generator.ts';
 import { bundleApp } from './bundler.ts';
+import { readDesignJson } from './config.ts';
 
 export interface DevOptions {
   /** Absolute path to the app directory */
@@ -71,7 +72,9 @@ export async function startDev(opts: DevOptions): Promise<void> {
         console.log(`  ${page.routePath} → ${page.filePath} (${page.importName})`);
       }
 
-      const bridgeCode = generateBridge(scan);
+      const designJson = readDesignJson(appDir);
+      if (designJson) console.log(`[magnetic] Design tokens: design.json loaded`);
+      const bridgeCode = generateBridge(scan, undefined, designJson ?? undefined);
       const result = await bundleApp({
         appDir,
         bridgeCode,
@@ -127,7 +130,7 @@ export async function startDev(opts: DevOptions): Promise<void> {
 
   // Watch for changes
   const watchDirs = [join(appDir, 'pages'), join(appDir, 'components')];
-  const watchFiles = ['state.ts', 'state.tsx', 'server/state.ts', 'server/state.tsx']
+  const watchFiles = ['state.ts', 'state.tsx', 'server/state.ts', 'server/state.tsx', 'design.json']
     .map(f => join(appDir, f));
 
   let rebuildTimer: ReturnType<typeof setTimeout> | null = null;

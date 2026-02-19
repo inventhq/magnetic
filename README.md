@@ -58,26 +58,96 @@ Browser                          Server (Rust + V8)
 ```
 my-app/
 ├── pages/                 ← TSX page components (filename = route)
+│   ├── layout.tsx           Wraps all pages (nav, footer, <Head>)
 │   ├── IndexPage.tsx        → /
 │   ├── AboutPage.tsx        → /about
 │   ├── [id].tsx             → /:id (dynamic)
-│   └── NotFoundPage.tsx     → * (catch-all)
+│   ├── NotFoundPage.tsx     → * (catch-all)
+│   └── dashboard/
+│       ├── layout.tsx       Nested layout for /dashboard/*
+│       └── IndexPage.tsx    → /dashboard
 ├── components/            ← Shared TSX components
 ├── server/
 │   └── state.ts           ← Business logic (state, reducer, view model)
 ├── public/
-│   ├── magnetic.js          Client runtime (provided by framework)
 │   └── style.css            App styles (inlined into SSR HTML)
 ├── magnetic.json          ← App config
 └── tsconfig.json          ← IDE support
 ```
+
+## Layouts
+
+Place a `layout.tsx` file in any `pages/` directory to wrap all pages at that level:
+
+```tsx
+// pages/layout.tsx — Root layout (wraps every page)
+import { Head } from '@magneticjs/server';
+
+export default function RootLayout({ children, path }: { children: any; path: string }) {
+  return (
+    <div class="app-shell">
+      <Head>
+        <title>My App</title>
+        <meta name="description" content="Built with Magnetic" />
+      </Head>
+      <nav>
+        <a href="/" class={path === '/' ? 'active' : ''}>Home</a>
+        <a href="/about" class={path === '/about' ? 'active' : ''}>About</a>
+      </nav>
+      <main>{children}</main>
+      <footer>Powered by Magnetic</footer>
+    </div>
+  );
+}
+```
+
+Nested layouts work automatically:
+
+```
+pages/
+├── layout.tsx              ← wraps ALL pages
+├── IndexPage.tsx
+├── AboutPage.tsx
+└── dashboard/
+    ├── layout.tsx          ← wraps /dashboard/* pages (nested inside root layout)
+    └── IndexPage.tsx
+```
+
+Layout props:
+- **`children`** — the rendered page (or inner layout)
+- **`path`** — current URL path (for active nav highlighting)
+- **`params`** — extracted URL parameters
+
+## Head & Meta (SEO)
+
+Use the `<Head>` component anywhere in a page or layout to inject `<head>` elements:
+
+```tsx
+import { Head } from '@magneticjs/server';
+
+export function AboutPage() {
+  return (
+    <div>
+      <Head>
+        <title>About Us</title>
+        <meta name="description" content="Learn more about us" />
+        <meta property="og:title" content="About Us" />
+        <link rel="canonical" href="https://example.com/about" />
+      </Head>
+      <h1>About</h1>
+    </div>
+  );
+}
+```
+
+During SSR, `<Head>` children are extracted and placed into the HTML `<head>`. Page-level `<Head>` overrides layout-level `<Head>` for `<title>`.
 
 ## Writing Pages
 
 Pages are TSX files in `pages/`. The exported function receives the view model as props:
 
 ```tsx
-import { Head, Link } from '@magneticjs/server/jsx-runtime';
+import { Head, Link } from '@magneticjs/server';
 
 export function IndexPage(props: any) {
   return (

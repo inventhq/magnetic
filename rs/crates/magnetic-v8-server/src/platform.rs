@@ -29,7 +29,7 @@ use crate::{
     cors_middleware, rate_limit_middleware, logger_middleware,
     build_assets, find_arg, serve_embedded,
 };
-use crate::data::{DataContext, DataLayerConfig, parse_config, fetch_page_data, fetch_page_data_with_token, forward_action, start_poll_threads};
+use crate::data::{DataContext, DataLayerConfig, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, fetch_data_source};
 use crate::auth::AuthMiddleware;
 
 // ── Idle timeout for V8 parking ──────────────────────────────────────
@@ -650,9 +650,19 @@ fn handle_platform_connection(
                     eprintln!("[platform] {} /apps/{}{} → ({}ms)", method, app_name, p, ms);
                     return result;
                 }
+                (m, p) if p.starts_with("/api/") => {
+                    let mut body = vec![0u8; content_length];
+                    if content_length > 0 { reader.read_exact(&mut body)?; }
+                    let result = handle_app_api(
+                        &mut stream, &app, m, p, &body, &extra_headers,
+                    );
+                    let ms = log_start.elapsed().as_millis();
+                    eprintln!("[platform] {} /apps/{}{} → ({}ms)", m, app_name, p, ms);
+                    return result;
+                }
                 ("GET", p) => {
                     let result = handle_app_get(
-                        &mut stream, &app, app_name, p, &extra_headers,
+                        &mut stream, Arc::clone(&app), app_name, p, &extra_headers,
                         via_subdomain.is_some(), &req_headers,
                     );
                     let ms = log_start.elapsed().as_millis();
@@ -984,9 +994,69 @@ fn handle_app_action(
     Ok(())
 }
 
-fn handle_app_get(
+fn handle_app_api(
     stream: &mut TcpStream,
     app: &AppHandle,
+    method: &str,
+    path: &str,
+    body: &[u8],
+    extra_headers: &HashMap<String, String>,
+) -> std::io::Result<()> {
+    app.touch();
+    let tx = app.ensure_warm().map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
+
+    let body_str = String::from_utf8_lossy(body).to_string();
+    let reply = Reply::new();
+    if tx.send(V8Request::ApiCall {
+        method: method.to_string(),
+        path: path.to_string(),
+        body: body_str,
+        reply: reply.clone(),
+    }).is_err() {
+        let msg = "{\"error\":\"V8 thread unavailable\"}";
+        let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+        stream.write_all(resp.as_bytes())?;
+        return stream.write_all(msg.as_bytes());
+    }
+
+    let (status, response_body) = match reply.recv() {
+        V8Result::Ok(json) => {
+            // Check for __status and __error in response
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json) {
+                let status = val.get("__status")
+                    .and_then(|s| s.as_u64())
+                    .unwrap_or(200) as u16;
+                if val.get("__error").is_some() {
+                    let err_msg = val.get("__error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                    (status, format!("{{\"error\":\"{}\"}}", err_msg))
+                } else {
+                    (200, json)
+                }
+            } else {
+                (200, json)
+            }
+        }
+        V8Result::Err(e) => {
+            (500, format!("{{\"error\":\"{}\"}}", e))
+        }
+    };
+
+    let status_line = status_text(status);
+    let eh = format_extra_headers(extra_headers);
+    let resp = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\n\
+        Content-Length: {}\r\n{}\r\n",
+        status, status_line, response_body.len(), eh
+    );
+    stream.write_all(resp.as_bytes())?;
+    stream.write_all(response_body.as_bytes())
+}
+
+fn handle_app_get(
+    stream: &mut TcpStream,
+    app: Arc<AppHandle>,
     app_name: &str,
     path: &str,
     extra_headers: &HashMap<String, String>,
@@ -1049,12 +1119,15 @@ fn handle_app_get(
     let auth_token = app.auth.as_ref()
         .and_then(|auth| auth.get_access_token(req_headers));
 
-    // Fetch page-scoped data sources and inject into V8 before render
+    // Fetch page-scoped data sources (with streaming timeout support)
+    // Use CSS-aware render variants for SSR (RenderWithCSS / RenderWithDataAndCSS)
+    // The deferred SSE update path still uses RenderWithData (bare DomNode) — unaffected
     let reply = Reply::new();
+    let mut pending_sources: Vec<crate::data::DataSourceConfig> = Vec::new();
     if let Some(ref ctx) = app.data_ctx {
-        fetch_page_data_with_token(ctx, route_path, auth_token.as_deref());
+        pending_sources = fetch_page_data_streaming(ctx, route_path, auth_token.as_deref());
         let data_json = ctx.data_json_for_page(route_path);
-        if tx.send(V8Request::RenderWithData {
+        if tx.send(V8Request::RenderWithDataAndCSS {
             path: route_path.to_string(), data_json, reply: reply.clone(),
         }).is_err() {
             let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
@@ -1063,7 +1136,7 @@ fn handle_app_get(
             return stream.write_all(msg.as_bytes());
         }
     } else {
-        if tx.send(V8Request::Render {
+        if tx.send(V8Request::RenderWithCSS {
             path: route_path.to_string(), reply: reply.clone(),
         }).is_err() {
             let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
@@ -1073,20 +1146,81 @@ fn handle_app_get(
         }
     }
 
-    let dom = match reply.recv() {
+    // If sources timed out, complete fetch in background and push update via SSE
+    if !pending_sources.is_empty() {
+        let deferred_app = Arc::clone(&app);
+        let route = route_path.to_string();
+        let token = auth_token.clone();
+        thread::spawn(move || {
+            if let Some(ref ctx) = deferred_app.data_ctx {
+                for source in &pending_sources {
+                    match fetch_data_source(source, token.as_deref()) {
+                        Ok(value) => ctx.set_value(&source.key, value),
+                        Err(e) => {
+                            eprintln!("[data] deferred fetch error: {}", e);
+                            ctx.set_value(&source.key, serde_json::json!({ "__error": e }));
+                        }
+                    }
+                }
+                // Clear loading flag
+                ctx.values.write().unwrap().remove("__loading");
+                // Re-render with complete data and push via SSE
+                if let Ok(tx) = deferred_app.ensure_warm() {
+                    let data_json = ctx.data_json_for_page(&route);
+                    let reply = Reply::new();
+                    if tx.send(V8Request::RenderWithData {
+                        path: route, data_json, reply: reply.clone(),
+                    }).is_ok() {
+                        let dom_json = v8_result_to_json(reply.recv(), None);
+                        let snapshot = format!("{{\"root\":{}}}", dom_json);
+                        let mut clients = deferred_app.sse_clients.lock().unwrap();
+                        let mut alive = Vec::new();
+                        for mut client in clients.drain(..) {
+                            if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
+                                alive.push(client);
+                            }
+                        }
+                        *clients = alive;
+                        eprintln!("[data] deferred data ready, pushed SSE update");
+                    }
+                }
+            }
+        });
+    }
+
+    // Parse {root: DomNode, css: string|null} from renderWithCSS result
+    let (dom, generated_css) = match reply.recv() {
         V8Result::Ok(json) => {
-            match serde_json::from_str::<DomNode>(&json) {
-                Ok(d) => d,
+            match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(wrapper) => {
+                    let root_val = wrapper.get("root").cloned().unwrap_or(serde_json::Value::Null);
+                    let css_val = wrapper.get("css").and_then(|v| v.as_str()).map(String::from);
+                    match serde_json::from_value::<DomNode>(root_val) {
+                        Ok(d) => (d, css_val),
+                        Err(e) => {
+                            eprintln!("[platform:{}] render parse error: {}", app_name, e);
+                            (error_fallback(&format!("JSON parse error: {}", e), None), None)
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("[platform:{}] render parse error: {}", app_name, e);
-                    error_fallback(&format!("JSON parse error: {}", e), None)
+                    (error_fallback(&format!("JSON parse error: {}", e), None), None)
                 }
             }
         }
         V8Result::Err(e) => {
             eprintln!("[platform:{}] render error: {}", app_name, e);
-            error_fallback(&e, None)
+            (error_fallback(&e, None), None)
         }
+    };
+
+    // Merge CSS: generated CSS from design.json + user's style.css (if any)
+    let merged_css = match (&generated_css, &app.inline_css) {
+        (Some(gen), Some(user)) => Some(format!("{}{}", gen, user)),
+        (Some(gen), None) => Some(gen.clone()),
+        (None, Some(user)) => Some(user.clone()),
+        (None, None) => None,
     };
 
     // When accessed via subdomain, emit root-relative paths (Caddy rewrites
@@ -1104,7 +1238,7 @@ fn handle_app_get(
         root: dom,
         scripts: vec![magnetic_js],
         styles: vec![],
-        inline_css: app.inline_css.clone(),
+        inline_css: merged_css,
         sse_url: Some(format!("{}/sse", prefix)),
         mount_selector: Some("#app".to_string()),
         wasm_url,

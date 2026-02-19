@@ -1,0 +1,21 @@
+{
+  "name": "@magneticjs/css",
+  "version": "0.1.0",
+  "description": "Magnetic CSS framework — server-side utility CSS generation, theme tokens, zero client JS",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./theme": "./src/theme.ts",
+    "./utilities": "./src/utilities.ts",
+    "./extract": "./src/extract.ts",
+    "./reset": "./src/reset.ts"
+  },
+  "files": ["src"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": { "type": "git", "url": "https://github.com/inventhq/magnetic.git", "directory": "js/packages/magnetic-css" },
+  "homepage": "https://github.com/inventhq/magnetic#readme",
+  "keywords": ["magnetic", "css", "server-driven-ui", "utility-css", "design-tokens", "zero-js"],
+  "license": "MIT"
+}
