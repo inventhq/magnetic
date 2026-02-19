@@ -51,13 +51,28 @@
   // --- Apply snapshot to DOM ---
   function apply(snap) {
     if (!root || !snap || !snap.root) return;
+    // Preserve focus across patches
+    var ae = d.activeElement;
+    var sel = null;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) {
+      sel = { el: ae, key: ae.dataset ? ae.dataset.key : null, name: ae.getAttribute("name"), start: ae.selectionStart, end: ae.selectionEnd, val: ae.value };
+    }
     var n = snap.root;
     if (n.key && keys[n.key] && keys[n.key].parentNode === root) {
       patch(keys[n.key], n);
-      return;
+    } else {
+      root.textContent = "";
+      root.appendChild(create(n));
     }
-    root.textContent = "";
-    root.appendChild(create(n));
+    // Restore focus
+    if (sel) {
+      var target = sel.key ? keys[sel.key] : (sel.name ? root.querySelector("input[name='" + sel.name + "'],textarea[name='" + sel.name + "']") : null);
+      if (target && target !== d.activeElement) {
+        target.focus();
+        target.value = sel.val;
+        try { target.setSelectionRange(sel.start, sel.end); } catch(e) {}
+      }
+    }
   }
   M._apply = apply;
 
