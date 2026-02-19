@@ -34,3 +34,20 @@ Record of production bugs and fixes for cross-team reference.
 **Commit:** `62bea38`
 
 ---
+
+## 2026-02-19: V8 "Invalid global state" SEGV on multi-app startup
+
+**Symptom:** Platform server with 2+ apps crashes with SEGV (signal 11) or panics with "Invalid global state" on first boot. The second V8 isolate fails to initialize. Systemd auto-restarts and the second boot sometimes works (race timing).
+
+**Root cause:** Each `v8_thread()` had its own `static V8_INIT: Once` calling `v8::V8::initialize_platform()` + `v8::V8::initialize()`. When two apps loaded simultaneously, there were **two separate `Once` statics** (one per call site) — they didn't coordinate. Even with a single `Once`, V8 internals weren't fully ready when the second thread immediately called `v8::Isolate::new()` after the `Once` returned, causing a SEGV in V8's native code.
+
+**Fix:**
+- Extracted a single `pub fn ensure_v8_initialized()` in `main.rs` with one `Once` static.
+- `run_platform()` calls `ensure_v8_initialized()` **on the main thread before loading any apps**. V8 is fully initialized before any `v8_thread` spawns.
+- `v8_thread()` also calls `ensure_v8_initialized()` (no-op since already done) for safety in non-platform (single-app) mode.
+
+**Key lesson for AI agents:** V8 must be initialized on the main thread before spawning isolate threads. Use a single shared `Once` static, and call it before any `thread::spawn` that creates V8 isolates. Two separate `Once` statics in different functions do NOT coordinate.
+
+**Commit:** `6409019`
+
+---
