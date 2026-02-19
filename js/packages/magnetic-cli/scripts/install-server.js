@@ -4,8 +4,8 @@
  * for the current platform during `npm install @magneticjs/cli`.
  *
  * Update strategy:
- *   - Version is read from ../package.json (matches @magneticjs/cli version)
- *   - When user runs `npm update @magneticjs/cli`, this script re-runs
+ *   - SERVER_VERSION is hardcoded (decoupled from npm package version)
+ *   - Only bump SERVER_VERSION when a new binary is uploaded to GitHub Releases
  *   - Binary version is tracked in bin/.version
  *   - If version mismatch → re-download; if match → skip
  *
@@ -26,18 +26,18 @@ const binDir = join(pkgDir, 'bin');
 const binPath = join(binDir, 'magnetic-v8-server');
 const versionFile = join(binDir, '.version');
 
-// Read version from package.json (stays in sync with npm version)
-const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8'));
-const version = pkg.version;
+// Server binary version — decoupled from npm package version.
+// Only bump this when a new binary is uploaded to GitHub Releases.
+const SERVER_VERSION = '0.1.0';
 
-// Check if installed binary matches current CLI version
+// Check if installed binary matches current server version
 if (existsSync(binPath) && existsSync(versionFile)) {
   const installed = readFileSync(versionFile, 'utf-8').trim();
-  if (installed === version) {
-    console.log(`[magnetic] Server binary v${version} already installed, skipping`);
+  if (installed === SERVER_VERSION) {
+    console.log(`[magnetic] Server binary v${SERVER_VERSION} already installed, skipping`);
     process.exit(0);
   }
-  console.log(`[magnetic] Server binary outdated (${installed} → ${version}), updating...`);
+  console.log(`[magnetic] Server binary outdated (${installed} → ${SERVER_VERSION}), updating...`);
 }
 
 // Determine platform target
@@ -60,7 +60,7 @@ if (!target) {
 }
 
 const baseUrl = process.env.MAGNETIC_BINARY_URL ||
-  `https://github.com/inventhq/magnetic/releases/download/v${version}`;
+  `https://github.com/inventhq/magnetic/releases/download/v${SERVER_VERSION}`;
 const filename = `magnetic-v8-server-${target}.tar.gz`;
 const url = `${baseUrl}/${filename}`;
 
@@ -91,8 +91,8 @@ try {
 
   if (downloaded && existsSync(binPath)) {
     chmodSync(binPath, 0o755);
-    writeFileSync(versionFile, version);
-    console.log(`[magnetic] ✓ Server binary v${version} installed: ${binPath}`);
+    writeFileSync(versionFile, SERVER_VERSION);
+    console.log(`[magnetic] ✓ Server binary v${SERVER_VERSION} installed: ${binPath}`);
   } else {
     throw new Error(`Download failed or binary not found after extraction`);
   }
