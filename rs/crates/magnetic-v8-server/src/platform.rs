@@ -26,7 +26,7 @@ use crate::{
     write_sse_event, broadcast_snapshot, guess_content_type,
     format_extra_headers, status_text, urlencoding_decode,
     cors_middleware, rate_limit_middleware, logger_middleware,
-    build_assets, find_arg,
+    build_assets, find_arg, serve_embedded,
 };
 
 // ── Per-app handle ──────────────────────────────────────────────────
@@ -135,7 +135,7 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
     let asset_dir = format!("{}/.hashed", public_dir);
     let manifest = build_assets(
         &public_dir, &asset_dir,
-        &["magnetic.js", "transport.wasm", "index.html"],
+        &["index.html"],
     );
 
     // Load CSS
@@ -532,6 +532,12 @@ fn handle_app_get(
     let ext = path.rsplit('.').next().unwrap_or("");
     if has_ext && ext != "html" {
         let filename = path.trim_start_matches('/');
+
+        // Embedded framework assets — served from binary, never from disk
+        if let Some(result) = serve_embedded(stream, filename, extra_headers) {
+            return result;
+        }
+
         let file_path = {
             let hashed = std::path::Path::new(&app.asset_dir).join(filename);
             if hashed.exists() { hashed }
@@ -589,14 +595,10 @@ fn handle_app_get(
         }
     };
 
-    // Resolve asset URLs — prefix with /apps/<name>/
+    // Framework assets are embedded in the binary — prefix with /apps/<name>/
     let app_prefix = format!("/apps/{}", app_name);
-    let magnetic_js = resolve_app_asset(app, &app_prefix, "magnetic.js");
-    let wasm_url = if app.manifest.files.contains_key("transport.wasm") {
-        Some(resolve_app_asset(app, &app_prefix, "transport.wasm"))
-    } else {
-        None
-    };
+    let magnetic_js = format!("{}/magnetic.js", app_prefix);
+    let wasm_url = Some(format!("{}/transport.wasm", app_prefix));
 
     let page = render_page(&PageOptions {
         root: dom,
@@ -620,10 +622,4 @@ fn handle_app_get(
     stream.write_all(page.as_bytes())
 }
 
-fn resolve_app_asset(app: &AppHandle, prefix: &str, filename: &str) -> String {
-    if let Some(hashed) = app.manifest.files.get(filename) {
-        format!("{}/{}", prefix, hashed)
-    } else {
-        format!("{}/{}", prefix, filename)
-    }
-}
+

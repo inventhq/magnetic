@@ -28,6 +28,40 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 // ═══════════════════════════════════════════════════════════════════
+// 0. EMBEDDED FRAMEWORK ASSETS
+// ═══════════════════════════════════════════════════════════════════
+
+/// Client runtime — embedded at compile time. Never exists as a user-visible file.
+const EMBEDDED_MAGNETIC_JS: &[u8] = include_bytes!("../assets/magnetic.min.js");
+
+/// WASM transport — embedded at compile time. Never exists as a user-visible file.
+const EMBEDDED_TRANSPORT_WASM: &[u8] = include_bytes!("../assets/transport.wasm");
+
+/// Serve an embedded asset with proper headers. Returns true if handled.
+pub fn serve_embedded(
+    stream: &mut TcpStream,
+    filename: &str,
+    extra_headers: &HashMap<String, String>,
+) -> Option<std::io::Result<()>> {
+    let (data, content_type): (&[u8], &str) = match filename {
+        "magnetic.js" => (EMBEDDED_MAGNETIC_JS, "application/javascript"),
+        "transport.wasm" => (EMBEDDED_TRANSPORT_WASM, "application/wasm"),
+        _ => return None,
+    };
+
+    let eh = format_extra_headers(extra_headers);
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\
+        Cache-Control: public, max-age=31536000, immutable\r\n{}\r\n",
+        content_type, data.len(), eh
+    );
+    Some((|| {
+        stream.write_all(resp.as_bytes())?;
+        stream.write_all(data)
+    })())
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 1. MIDDLEWARE
 // ═══════════════════════════════════════════════════════════════════
 
@@ -517,7 +551,7 @@ fn main() {
     let asset_dir = format!("{}/.hashed", static_dir);
     let manifest = build_assets(
         &static_dir, &asset_dir,
-        &["magnetic.js", "transport.wasm", "index.html"],
+        &["index.html"],
     );
     eprintln!("[magnetic-v8] Asset pipeline: {} files hashed", manifest.files.len());
     for (orig, hashed) in &manifest.files {
@@ -807,13 +841,9 @@ fn handle_get(
         }
     };
 
-    // Resolve asset URLs for scripts/styles
-    let magnetic_js = resolve_asset(server, "magnetic.js");
-    let wasm_url = if server.manifest.files.contains_key("transport.wasm") {
-        Some(resolve_asset(server, "transport.wasm"))
-    } else {
-        None
-    };
+    // Framework assets are embedded in the binary — always available
+    let magnetic_js = "/magnetic.js".to_string();
+    let wasm_url = Some("/transport.wasm".to_string());
 
     let page = render_page(&PageOptions {
         root: dom,
@@ -845,6 +875,11 @@ fn serve_static(
     extra_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     let filename = path.trim_start_matches('/');
+
+    // Embedded framework assets — served from binary, never from disk
+    if let Some(result) = serve_embedded(stream, filename, extra_headers) {
+        return result;
+    }
 
     // Try hashed asset dir first, then fallback to static_dir
     let file_path = {
@@ -890,15 +925,6 @@ fn serve_static(
     );
     stream.write_all(resp.as_bytes())?;
     stream.write_all(&data)
-}
-
-/// Resolve an asset filename to its URL (using hashed name if available)
-fn resolve_asset(server: &Server, filename: &str) -> String {
-    if let Some(hashed) = server.manifest.files.get(filename) {
-        format!("/{}", hashed)
-    } else {
-        format!("/{}", filename)
-    }
 }
 
 /// Convert V8Result to JSON string, using error_fallback on error

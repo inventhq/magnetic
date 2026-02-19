@@ -19,15 +19,13 @@
  * Developer writes ONLY pages/components + server/state.ts.
  * The @magnetic/cli handles bundling, bridge generation, and server management.
  */
-import { mkdirSync, writeFileSync, copyFileSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
 
 /**
  * @param {string} dest — target directory
  * @param {object} opts
  * @param {string} opts.name — project name
- * @param {string} [opts.runtimeSrc] — path to magnetic.js to copy
- * @param {string} [opts.wasmSrc] — path to transport.wasm to copy
  * @param {string} [opts.template] — template name: "blank" | "todo" (default: "todo")
  * @param {object} [opts.files] — extra files to write: { relativePath: content }
  */
@@ -72,16 +70,6 @@ export function scaffold(dest, opts = {}) {
   // README + GUIDE
   writeFileSync(join(dir, 'README.md'), readme(name));
   writeFileSync(join(dir, 'GUIDE.md'), guide(name));
-
-  // Copy client runtime if available
-  if (opts.runtimeSrc && existsSync(opts.runtimeSrc)) {
-    copyFileSync(opts.runtimeSrc, join(dir, 'public/magnetic.js'));
-  }
-
-  // Copy transport WASM if available
-  if (opts.wasmSrc && existsSync(opts.wasmSrc)) {
-    copyFileSync(opts.wasmSrc, join(dir, 'public/transport.wasm'));
-  }
 
   // Write any extra files
   if (opts.files) {
