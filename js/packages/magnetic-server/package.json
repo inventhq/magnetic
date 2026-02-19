@@ -1,15 +1,16 @@
 {
   "name": "@magneticjs/server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Magnetic server-driven UI framework — JSX runtime, router, SSR",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./jsx-runtime": "./src/jsx-runtime.ts",
     "./router": "./src/router.ts",
-    "./ssr": "./src/ssr.ts"
+    "./ssr": "./src/ssr.ts",
+    "./transport.wasm": "./wasm/transport.wasm"
   },
-  "files": ["src"],
+  "files": ["src", "wasm"],
   "publishConfig": {
     "access": "public"
   },

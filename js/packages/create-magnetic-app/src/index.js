@@ -27,6 +27,7 @@ import { join, resolve } from 'path';
  * @param {object} opts
  * @param {string} opts.name — project name
  * @param {string} [opts.runtimeSrc] — path to magnetic.js to copy
+ * @param {string} [opts.wasmSrc] — path to transport.wasm to copy
  * @param {string} [opts.template] — template name: "blank" | "todo" (default: "todo")
  * @param {object} [opts.files] — extra files to write: { relativePath: content }
  */
@@ -75,6 +76,11 @@ export function scaffold(dest, opts = {}) {
   // Copy client runtime if available
   if (opts.runtimeSrc && existsSync(opts.runtimeSrc)) {
     copyFileSync(opts.runtimeSrc, join(dir, 'public/magnetic.js'));
+  }
+
+  // Copy transport WASM if available
+  if (opts.wasmSrc && existsSync(opts.wasmSrc)) {
+    copyFileSync(opts.wasmSrc, join(dir, 'public/transport.wasm'));
   }
 
   // Write any extra files

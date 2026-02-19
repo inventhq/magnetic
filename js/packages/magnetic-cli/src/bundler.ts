@@ -2,8 +2,9 @@
 // Takes generated bridge code and bundles it into an IIFE for V8
 
 import { build } from 'esbuild';
-import { join, resolve } from 'node:path';
-import { mkdirSync, existsSync, writeFileSync, statSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
+import { mkdirSync, existsSync, writeFileSync, statSync, readdirSync, readFileSync, copyFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
 export interface BundleOptions {
   /** Absolute path to the app directory */
@@ -26,6 +27,46 @@ export interface BundleResult {
 }
 
 /**
+ * Copy transport.wasm into the app's public/ directory.
+ * Looks in @magneticjs/server/wasm/ (npm) or monorepo path.
+ */
+export function copyTransportWasm(appDir: string, monorepoRoot?: string): boolean {
+  const publicDir = join(appDir, 'public');
+  const dest = join(publicDir, 'transport.wasm');
+
+  // Already there — skip
+  if (existsSync(dest)) return true;
+
+  // Candidate locations for the WASM file
+  const candidates: string[] = [];
+
+  // Monorepo path
+  if (monorepoRoot) {
+    candidates.push(join(monorepoRoot, 'js/packages/magnetic-server/wasm/transport.wasm'));
+  }
+
+  // npm-installed @magneticjs/server
+  try {
+    const require = createRequire(join(appDir, 'package.json'));
+    const serverPkg = require.resolve('@magneticjs/server');
+    candidates.push(join(dirname(serverPkg), '..', 'wasm', 'transport.wasm'));
+  } catch {}
+
+  // CLI's own bundled copy (sibling to dist/)
+  candidates.push(join(import.meta.dirname || __dirname, '..', 'wasm', 'transport.wasm'));
+
+  for (const src of candidates) {
+    if (existsSync(src)) {
+      mkdirSync(publicDir, { recursive: true });
+      copyFileSync(src, dest);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Bundle the generated bridge code into an IIFE for V8 consumption.
  * Uses esbuild with stdin so no temp file is needed.
  */
@@ -37,6 +78,9 @@ export async function bundleApp(opts: BundleOptions): Promise<BundleResult> {
   if (!existsSync(outDir)) {
     mkdirSync(outDir, { recursive: true });
   }
+
+  // Ensure transport.wasm is in public/
+  copyTransportWasm(opts.appDir, opts.monorepoRoot);
 
   // Resolve @magneticjs/server — in monorepo use actual path, otherwise npm package
   const alias: Record<string, string> = {};

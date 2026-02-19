@@ -46,7 +46,18 @@ for (const p of runtimePaths) {
   if (existsSync(p)) { runtimeSrc = p; break; }
 }
 
-const dir = scaffold(targetDir, { name, template, runtimeSrc });
+// Try to find transport.wasm
+const wasmPaths = [
+  resolve(import.meta.dirname, '../../../magnetic-server/wasm/transport.wasm'),
+  resolve(import.meta.dirname, '../../../magnetic-cli/wasm/transport.wasm'),
+  resolve(process.cwd(), 'js/packages/magnetic-server/wasm/transport.wasm'),
+];
+let wasmSrc = null;
+for (const p of wasmPaths) {
+  if (existsSync(p)) { wasmSrc = p; break; }
+}
+
+const dir = scaffold(targetDir, { name, template, runtimeSrc, wasmSrc });
 console.log(`\n✓ Created Magnetic app: ${name}`);
 console.log(`  ${dir}\n`);
 console.log(`  Next steps:`);
