@@ -168,13 +168,17 @@
   }
 
   // --- Event delegation ---
+  // e.target can be a Text node (no closest method) — resolve to nearest Element
+  function elOf(e) { var t = e.target; return t.closest ? t : t.parentElement; }
   function bind() {
     d.addEventListener("click", function(e) {
-      var t = e.target.closest("[data-a_click]");
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_click]");
       if (t) { e.preventDefault(); send(t.dataset.a_click, {}); }
     });
     d.addEventListener("submit", function(e) {
-      var t = e.target.closest("[data-a_submit]");
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_submit]");
       if (t) {
         e.preventDefault();
         var p = {}, f = new FormData(t);
@@ -184,7 +188,8 @@
       }
     });
     d.addEventListener("input", function(e) {
-      var t = e.target.closest("[data-a_input]");
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_input]");
       if (t) {
         var a = t.dataset.a_input;
         clearTimeout(deb[a]);
@@ -234,7 +239,8 @@
   // --- Prefetching: warm server cache on link hover ---
   var prefetched = {};
   d.addEventListener("mouseenter", function(e) {
-    var t = e.target.closest("[data-prefetch]");
+    var el = elOf(e); if (!el) return;
+    var t = el.closest("[data-prefetch]");
     if (t) {
       var href = t.getAttribute("data-prefetch");
       if (href && !prefetched[href]) {

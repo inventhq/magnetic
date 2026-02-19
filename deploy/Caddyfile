@@ -48,6 +48,8 @@ fujs.dev {
 		rewrite * /apps/{labels.2}{uri}
 		reverse_proxy localhost:3003 {
 			header_up X-Subdomain {labels.2}
+			# Flush immediately for SSE (text/event-stream)
+			flush_interval -1
 		}
 	}
 }
