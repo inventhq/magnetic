@@ -1,0 +1,42 @@
+# Magnetic Cloud — Caddy reverse proxy config
+#
+# Prerequisites:
+#   1. DNS: *.fujs.dev → server IP (wildcard A record)
+#   2. Caddy built with DNS challenge plugin (caddy-dns/cloudflare)
+#   3. Set CF_API_TOKEN env var for Cloudflare DNS challenge
+#
+# Usage:
+#   CF_API_TOKEN=... caddy run --config /etc/caddy/Caddyfile
+#
+# The control plane pushes dynamic route config via Caddy's admin API
+# (localhost:2019). This Caddyfile is the static base config only.
+
+{
+	email admin@fujs.dev
+
+	# Enable admin API for dynamic config updates from control plane
+	admin localhost:2019
+}
+
+# Control plane API
+api.fujs.dev {
+	reverse_proxy localhost:4000
+}
+
+# Platform homepage / marketing site
+fujs.dev {
+	reverse_proxy localhost:4000
+}
+
+# Wildcard: all app subdomains
+# Uses Cloudflare DNS challenge for wildcard TLS cert.
+# Routes all subdomains to the local platform server via control plane.
+*.fujs.dev {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+
+	# Proxy to platform server — Caddy rewrites based on Host header
+	# The control plane's /api/resolve/:subdomain tells us where to route
+	reverse_proxy localhost:3003
+}

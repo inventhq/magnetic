@@ -1,0 +1,128 @@
+name: Build & Deploy Magnetic Cloud
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rs/crates/magnetic-v8-server/**'
+      - 'rs/crates/magnetic-control-plane/**'
+      - 'rs/crates/magnetic-dom/**'
+      - 'rs/crates/magnetic-render-html/**'
+      - 'deploy/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build Linux binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rs/target
+          key: linux-cargo-${{ hashFiles('rs/**/Cargo.lock', 'rs/**/Cargo.toml') }}
+          restore-keys: linux-cargo-
+
+      - name: Build magnetic-v8-server (release)
+        working-directory: rs/crates/magnetic-v8-server
+        run: cargo build --release
+
+      - name: Build magnetic-control-plane (release)
+        working-directory: rs/crates/magnetic-control-plane
+        run: cargo build --release
+
+      - name: Upload v8-server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: magnetic-v8-server-linux
+          path: rs/target/release/magnetic-v8-server
+          retention-days: 7
+
+      - name: Upload control-plane artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: magnetic-control-plane-linux
+          path: rs/target/release/magnetic-control-plane
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Civo node
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download v8-server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: magnetic-v8-server-linux
+          path: artifacts/
+
+      - name: Download control-plane binary
+        uses: actions/download-artifact@v4
+        with:
+          name: magnetic-control-plane-linux
+          path: artifacts/
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.NODE_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.NODE_IP }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload binaries to node
+        run: |
+          chmod +x artifacts/magnetic-v8-server
+          chmod +x artifacts/magnetic-control-plane
+          scp artifacts/magnetic-v8-server ubuntu@${{ secrets.NODE_IP }}:/tmp/magnetic-v8-server
+          scp artifacts/magnetic-control-plane ubuntu@${{ secrets.NODE_IP }}:/tmp/magnetic-control-plane
+
+      - name: Deploy on node
+        run: |
+          ssh ubuntu@${{ secrets.NODE_IP }} << 'DEPLOY'
+          set -euo pipefail
+
+          echo "=== Deploying Magnetic Cloud ==="
+
+          # Move binaries
+          sudo mv /tmp/magnetic-v8-server /usr/local/bin/magnetic-v8-server
+          sudo mv /tmp/magnetic-control-plane /usr/local/bin/magnetic-control-plane
+          sudo chmod +x /usr/local/bin/magnetic-v8-server
+          sudo chmod +x /usr/local/bin/magnetic-control-plane
+
+          # Ensure data dir exists
+          sudo mkdir -p /var/lib/magnetic/apps
+
+          # Restart services
+          sudo systemctl restart magnetic-platform || echo "platform not yet configured"
+          sudo systemctl restart magnetic-control-plane || echo "control-plane not yet configured"
+
+          # Verify
+          sleep 2
+          echo "--- Service Status ---"
+          sudo systemctl is-active magnetic-platform || true
+          sudo systemctl is-active magnetic-control-plane || true
+          sudo systemctl is-active caddy || true
+
+          echo "=== Deploy complete ==="
+          DEPLOY
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -sf --max-time 10 http://${{ secrets.NODE_IP }}:4000/health || echo "Control plane not yet reachable (may need env config)"

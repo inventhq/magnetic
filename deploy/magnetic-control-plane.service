@@ -1,0 +1,26 @@
+[Unit]
+Description=Magnetic Cloud Control Plane
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/magnetic-control-plane
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+
+Environment=PORT=4000
+Environment=MAGNETIC_DOMAIN=magnetic.app
+Environment=CADDY_ADMIN_URL=http://localhost:2019
+
+# Turso (set these in /etc/magnetic/control-plane.env)
+EnvironmentFile=-/etc/magnetic/control-plane.env
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/magnetic
+
+[Install]
+WantedBy=multi-user.target

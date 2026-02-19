@@ -11,35 +11,94 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use magnetic_dom::DomNode;
 use magnetic_render_html::{render_page, PageOptions};
 
 use crate::{
     V8Request, V8Result, Reply, AssetManifest,
-    MagneticContext, MiddlewareStack, MiddlewareFn,
+    MagneticContext, MiddlewareStack,
     v8_thread, v8_result_to_json, error_fallback,
-    write_sse_event, broadcast_snapshot, guess_content_type,
+    write_sse_event, guess_content_type,
     format_extra_headers, status_text, urlencoding_decode,
     cors_middleware, rate_limit_middleware, logger_middleware,
     build_assets, find_arg, serve_embedded,
 };
 
+// ── Idle timeout for V8 parking ──────────────────────────────────────
+
+const PARK_IDLE_SECS: u64 = 300; // 5 minutes
+const REAPER_INTERVAL_SECS: u64 = 30;
+
 // ── Per-app handle ──────────────────────────────────────────────────
 
 struct AppHandle {
     name: String,
-    v8_tx: mpsc::Sender<V8Request>,
+    v8_tx: Mutex<Option<mpsc::Sender<V8Request>>>,
+    parked: AtomicBool,
+    last_activity: Mutex<Instant>,
     sse_clients: Mutex<Vec<TcpStream>>,
     current_path: Mutex<String>,
     static_dir: String,
     asset_dir: String,
     inline_css: Option<String>,
     manifest: AssetManifest,
+    data_dir: String,
+}
+
+impl AppHandle {
+    /// Touch activity timestamp.
+    fn touch(&self) {
+        *self.last_activity.lock().unwrap() = Instant::now();
+    }
+
+    /// Ensure V8 thread is running. Returns sender or error string.
+    fn ensure_warm(&self) -> Result<mpsc::Sender<V8Request>, String> {
+        let mut guard = self.v8_tx.lock().unwrap();
+        if let Some(ref tx) = *guard {
+            return Ok(tx.clone());
+        }
+        // Cold start: reload from disk
+        let cold_start = Instant::now();
+        let bundle_path = format!("{}/{}/bundle.js", self.data_dir, self.name);
+        let js_source = std::fs::read_to_string(&bundle_path)
+            .map_err(|e| format!("cold start read: {}", e))?;
+        let (tx, rx) = mpsc::channel();
+        let js = js_source;
+        thread::spawn(move || v8_thread(js, rx));
+        *guard = Some(tx.clone());
+        self.parked.store(false, Ordering::Release);
+        let ms = cold_start.elapsed().as_millis();
+        eprintln!("[platform:{}] cold start: {}ms", self.name, ms);
+        Ok(tx)
+    }
+
+    /// Park the V8 thread (drop sender, isolate exits when channel closes).
+    fn park(&self) {
+        let mut guard = self.v8_tx.lock().unwrap();
+        if guard.is_some() {
+            *guard = None;
+            self.parked.store(true, Ordering::Release);
+            eprintln!("[platform:{}] parked (idle)", self.name);
+        }
+    }
+
+    fn is_parked(&self) -> bool {
+        self.parked.load(Ordering::Acquire)
+    }
+
+    fn sse_client_count(&self) -> usize {
+        self.sse_clients.lock().unwrap().len()
+    }
+
+    fn idle_secs(&self) -> u64 {
+        self.last_activity.lock().unwrap().elapsed().as_secs()
+    }
 }
 
 // ── Platform state ──────────────────────────────────────────────────
@@ -69,6 +128,10 @@ pub fn run_platform(args: &[String]) {
     middleware.add(cors_middleware(&cors_origin));
     middleware.add(rate_limit_middleware(60_000, rate_limit_max));
 
+    let park_idle = find_arg(args, "--park-idle")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(PARK_IDLE_SECS);
+
     let platform = Arc::new(Platform {
         apps: RwLock::new(HashMap::new()),
         data_dir: data_dir.clone(),
@@ -94,6 +157,12 @@ pub fn run_platform(args: &[String]) {
         }
     }
 
+    // Start reaper thread for V8 isolate parking
+    {
+        let platform_ref = Arc::clone(&platform);
+        thread::spawn(move || reaper_loop(platform_ref, park_idle));
+    }
+
     let app_count = platform.apps.read().unwrap().len();
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).expect("Failed to bind");
@@ -101,6 +170,7 @@ pub fn run_platform(args: &[String]) {
     eprintln!("[platform] Magnetic Platform Server — multi-tenant V8 hosting");
     eprintln!("[platform] Data dir: {}", data_dir);
     eprintln!("[platform] Apps loaded: {}", app_count);
+    eprintln!("[platform] V8 park idle: {}s", park_idle);
     eprintln!("[platform] Deploy: POST /api/apps/<name>/deploy");
     eprintln!("[platform] Access: GET /apps/<name>/");
 
@@ -146,14 +216,40 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
 
     Ok(AppHandle {
         name: name.to_string(),
-        v8_tx: tx,
+        v8_tx: Mutex::new(Some(tx)),
+        parked: AtomicBool::new(false),
+        last_activity: Mutex::new(Instant::now()),
         sse_clients: Mutex::new(Vec::new()),
         current_path: Mutex::new("/".to_string()),
         static_dir: public_dir,
         asset_dir,
         inline_css,
         manifest,
+        data_dir: data_dir.to_string(),
     })
+}
+
+// ── Reaper thread: parks idle V8 isolates ───────────────────────────
+
+fn reaper_loop(platform: Arc<Platform>, idle_threshold: u64) {
+    loop {
+        thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
+        let apps = platform.apps.read().unwrap();
+        for (name, app) in apps.iter() {
+            if app.is_parked() {
+                continue;
+            }
+            let idle = app.idle_secs();
+            let clients = app.sse_client_count();
+            if idle >= idle_threshold && clients == 0 {
+                eprintln!(
+                    "[reaper] parking '{}' (idle {}s, 0 SSE clients)",
+                    name, idle
+                );
+                app.park();
+            }
+        }
+    }
 }
 
 // ── Platform HTTP handler ───────────────────────────────────────────
@@ -220,6 +316,31 @@ fn handle_platform_connection(
         let ms = log_start.elapsed().as_millis();
         eprintln!("[platform] {} {} → ({}ms)", method, path, ms);
         return result;
+    }
+
+    // Route: app status
+    if method == "GET" && path.starts_with("/api/apps/") && path.ends_with("/status") {
+        let name = path
+            .strip_prefix("/api/apps/")
+            .and_then(|s| s.strip_suffix("/status"))
+            .unwrap_or("");
+        let apps = platform.apps.read().unwrap();
+        let json = if let Some(app) = apps.get(name) {
+            format!(
+                "{{\"name\":\"{}\",\"warm\":{},\"sse_clients\":{},\"idle_secs\":{}}}",
+                name, !app.is_parked(), app.sse_client_count(), app.idle_secs()
+            )
+        } else {
+            format!("{{\"error\":\"App '{}' not found\"}}", name)
+        };
+        let eh = format_extra_headers(&extra_headers);
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+            Content-Length: {}\r\n{}\r\n",
+            json.len(), eh
+        );
+        stream.write_all(resp.as_bytes())?;
+        return stream.write_all(json.as_bytes());
     }
 
     // Route: list apps
@@ -442,9 +563,14 @@ fn handle_app_sse(
     );
     stream.write_all(header.as_bytes())?;
 
+    app.touch();
+    let tx = app.ensure_warm().map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
+
     let path = app.current_path.lock().unwrap().clone();
     let reply = Reply::new();
-    app.v8_tx.send(V8Request::Render { path, reply: reply.clone() }).unwrap();
+    tx.send(V8Request::Render { path, reply: reply.clone() }).unwrap();
     let dom_json = v8_result_to_json(reply.recv(), None);
     let snapshot = format!("{{\"root\":{}}}", dom_json);
     write_sse_event(&mut stream, snapshot.as_bytes())?;
@@ -477,6 +603,11 @@ fn handle_app_action(
 
     let snapshot: String;
 
+    app.touch();
+    let tx = app.ensure_warm().map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
+
     if action == "navigate" {
         let nav_path = serde_json::from_str::<serde_json::Value>(&payload)
             .ok()
@@ -485,13 +616,13 @@ fn handle_app_action(
 
         *app.current_path.lock().unwrap() = nav_path.clone();
         let reply = Reply::new();
-        app.v8_tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).unwrap();
+        tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).unwrap();
         let dom_json = v8_result_to_json(reply.recv(), None);
         snapshot = format!("{{\"root\":{}}}", dom_json);
     } else {
         let path = app.current_path.lock().unwrap().clone();
         let reply = Reply::new();
-        app.v8_tx.send(V8Request::Reduce {
+        tx.send(V8Request::Reduce {
             action: action.clone(), payload, path, reply: reply.clone(),
         }).unwrap();
         let dom_json = v8_result_to_json(reply.recv(), Some(&action));
@@ -571,11 +702,16 @@ fn handle_app_get(
     }
 
     // SSR
+    app.touch();
+    let tx = app.ensure_warm().map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
+
     let route_path = path.split('?').next().unwrap_or("/");
     *app.current_path.lock().unwrap() = route_path.to_string();
 
     let reply = Reply::new();
-    app.v8_tx.send(V8Request::Render {
+    tx.send(V8Request::Render {
         path: route_path.to_string(), reply: reply.clone(),
     }).unwrap();
 
