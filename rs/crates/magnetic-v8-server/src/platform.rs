@@ -333,8 +333,23 @@ fn handle_platform_connection(
         }
     }
 
-    // Detect subdomain access (Caddy sets X-Subdomain header on rewritten requests)
-    let via_subdomain = raw_headers.get("x-subdomain").cloned();
+    // Detect subdomain access.
+    // Primary: X-Subdomain header (if Caddy sends it).
+    // Fallback: parse subdomain from X-Forwarded-Host (Caddy always sets this).
+    // e.g. X-Forwarded-Host: zf9at7gr.fujs.dev → subdomain = "zf9at7gr"
+    let via_subdomain = raw_headers.get("x-subdomain").cloned()
+        .or_else(|| {
+            raw_headers.get("x-forwarded-host")
+                .and_then(|host| {
+                    let parts: Vec<&str> = host.split('.').collect();
+                    // Must be at least 3 parts (sub.domain.tld) and not "api" or "www"
+                    if parts.len() >= 3 && parts[0] != "api" && parts[0] != "www" {
+                        Some(parts[0].to_string())
+                    } else {
+                        None
+                    }
+                })
+        });
 
     // Keep a copy of headers for auth cookie extraction
     let req_headers = raw_headers.clone();
