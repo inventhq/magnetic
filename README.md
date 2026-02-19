@@ -7,11 +7,11 @@ Server-driven UI framework. Write TSX pages and business logic — Magnetic hand
 Magnetic is a **server-driven UI framework** where all state and rendering logic runs on the server (Rust + V8). The browser receives pre-rendered JSON DOM descriptors and a ~1.5KB client runtime that patches the DOM. No React, no virtual DOM, no client-side state management.
 
 ```
-You write:                    Magnetic handles:
-  pages/*.tsx          →      Route mapping + bridge generation
-  components/*.tsx     →      Bundling (esbuild, single IIFE)
-  server/state.ts      →      Rust V8 server execution
-  public/style.css     →      SSR, SSE streaming, action dispatch
+You write:                    Magnetic does:
+  pages/*.tsx          →      Maps filename to route, renders in V8
+  components/*.tsx     →      Imported by pages, bundled together
+  server/state.ts      →      Called on every action, drives re-renders
+  public/style.css     →      Inlined into SSR HTML (no extra request)
 ```
 
 ## Quick Start
@@ -67,7 +67,7 @@ my-app/
 │   └── state.ts           ← Business logic (state, reducer, view model)
 ├── public/
 │   ├── magnetic.js          Client runtime (provided by framework)
-│   └── style.css            App styles (auto-inlined into SSR)
+│   └── style.css            App styles (inlined into SSR HTML)
 ├── magnetic.json          ← App config
 └── tsconfig.json          ← IDE support
 ```

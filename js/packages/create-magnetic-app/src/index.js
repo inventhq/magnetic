@@ -571,11 +571,11 @@ A complete reference for building components, pages, and business logic.
 ## Architecture Overview
 
 \`\`\`
-Developer writes:           Magnetic handles:
-  pages/*.tsx        →      Auto-bridge generation
-  components/*.tsx   →      Bundling (esbuild)
-  server/state.ts    →      Rust V8 server execution
-  public/style.css   →      SSR + SSE + action dispatch
+Developer writes:           Magnetic does:
+  pages/*.tsx        →      Maps filename to route, renders in V8
+  components/*.tsx   →      Imported by pages, bundled together
+  server/state.ts    →      Called on every action, drives re-renders
+  public/style.css   →      Inlined into SSR HTML (no extra request)
 \`\`\`
 
 **Key principle**: All state lives on the server. The client is a ~1.5KB
