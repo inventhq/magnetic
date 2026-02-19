@@ -1,6 +1,6 @@
 {
   "name": "create-magnetic-app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Scaffold a new Magnetic server-driven UI app",
   "type": "module",
   "bin": {
