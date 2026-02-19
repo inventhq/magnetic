@@ -29,6 +29,8 @@ use crate::{
     cors_middleware, rate_limit_middleware, logger_middleware,
     build_assets, find_arg, serve_embedded,
 };
+use crate::data::{DataContext, DataLayerConfig, parse_config, fetch_page_data, fetch_page_data_with_token, forward_action, start_poll_threads};
+use crate::auth::AuthMiddleware;
 
 // ── Idle timeout for V8 parking ──────────────────────────────────────
 
@@ -49,6 +51,10 @@ struct AppHandle {
     inline_css: Option<String>,
     manifest: AssetManifest,
     data_dir: String,
+    /// Declarative data layer context (if magnetic.json has data/actions config)
+    data_ctx: Option<Arc<DataContext>>,
+    /// Auth middleware (if magnetic.json has auth config)
+    auth: Option<Arc<AuthMiddleware>>,
 }
 
 impl AppHandle {
@@ -183,6 +189,7 @@ pub fn run_platform(args: &[String]) {
 fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
     let app_dir = format!("{}/{}", data_dir, name);
     let bundle_path = format!("{}/bundle.js", app_dir);
+    let config_path = format!("{}/config.json", app_dir);
     let public_dir = format!("{}/public", app_dir);
 
     let js_source = std::fs::read_to_string(&bundle_path)
@@ -192,6 +199,48 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
     let (tx, rx) = mpsc::channel();
     let js = js_source;
     thread::spawn(move || v8_thread(js, rx));
+
+    // Load data layer config (if present)
+    let mut data_ctx: Option<Arc<DataContext>> = None;
+    let mut auth_mw: Option<Arc<AuthMiddleware>> = None;
+
+    if std::path::Path::new(&config_path).exists() {
+        if let Ok(json) = std::fs::read_to_string(&config_path) {
+            match parse_config(&json) {
+                Ok(config) => {
+                    // Initialize auth middleware if configured
+                    if let Some(ref auth_cfg) = config.auth {
+                        eprintln!("[platform:{}] auth: provider={}", name, auth_cfg.provider);
+                        auth_mw = Some(Arc::new(AuthMiddleware::new(auth_cfg.clone())));
+                    }
+
+                    let has_data = !config.data.is_empty();
+                    let has_actions = !config.actions.is_empty();
+                    if has_data || has_actions {
+                        eprintln!(
+                            "[platform:{}] data layer: {} sources, {} actions",
+                            name, config.data.len(), config.actions.len()
+                        );
+                        let ctx = Arc::new(DataContext::new(config));
+                        // Fetch initial data for all global sources
+                        let fetched = fetch_page_data(&ctx, "/");
+                        if fetched > 0 {
+                            let data_json = ctx.data_json_for_page("/");
+                            let reply = Reply::new();
+                            let _ = tx.send(V8Request::SetData {
+                                json: data_json,
+                                reply: reply.clone(),
+                            });
+                            let _ = reply.recv();
+                            eprintln!("[platform:{}] injected {} data sources", name, fetched);
+                        }
+                        data_ctx = Some(ctx);
+                    }
+                }
+                Err(e) => eprintln!("[platform:{}] config parse error: {}", name, e),
+            }
+        }
+    }
 
     // Build asset pipeline
     let asset_dir = format!("{}/.hashed", public_dir);
@@ -218,6 +267,8 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
         inline_css,
         manifest,
         data_dir: data_dir.to_string(),
+        data_ctx,
+        auth: auth_mw,
     })
 }
 
@@ -279,6 +330,9 @@ fn handle_platform_connection(
 
     // Detect subdomain access (Caddy sets X-Subdomain header on rewritten requests)
     let via_subdomain = raw_headers.get("x-subdomain").cloned();
+
+    // Keep a copy of headers for auth cookie extraction
+    let req_headers = raw_headers.clone();
 
     // Run middleware
     let mut ctx = MagneticContext::from_request(method, path, raw_headers);
@@ -397,14 +451,87 @@ fn handle_platform_connection(
             drop(apps); // release read lock
 
             match (method, app_path) {
+                // ── Auth routes ──────────────────────────────────
+                ("GET", "/auth/login") if app.auth.is_some() => {
+                    let auth = app.auth.as_ref().unwrap();
+                    let state = "magnetic"; // TODO: CSRF state token
+                    let url = auth.login_url(state);
+                    let eh = format_extra_headers(&extra_headers);
+                    let resp = format!(
+                        "HTTP/1.1 302 Found\r\nLocation: {}\r\n{}\r\n",
+                        url, eh
+                    );
+                    return stream.write_all(resp.as_bytes());
+                }
+                ("GET", p) if p.starts_with("/auth/callback") && app.auth.is_some() => {
+                    let auth = app.auth.as_ref().unwrap();
+                    // Extract ?code= from query string
+                    let code = path.split("code=").nth(1)
+                        .and_then(|s| s.split('&').next())
+                        .unwrap_or("");
+                    if code.is_empty() {
+                        let msg = "{\"error\":\"Missing authorization code\"}";
+                        let resp = format!(
+                            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                            msg.len()
+                        );
+                        stream.write_all(resp.as_bytes())?;
+                        return stream.write_all(msg.as_bytes());
+                    }
+                    match auth.exchange_code(code) {
+                        Ok((access_token, refresh_token, expires_in)) => {
+                            let (_session_id, cookie) = auth.create_session(
+                                &access_token,
+                                refresh_token.as_deref(),
+                                expires_in,
+                            );
+                            // Redirect back to app root
+                            let redirect_to = if via_subdomain.is_some() {
+                                "/".to_string()
+                            } else {
+                                format!("/apps/{}/", app_name)
+                            };
+                            let eh = format_extra_headers(&extra_headers);
+                            let resp = format!(
+                                "HTTP/1.1 302 Found\r\nLocation: {}\r\nSet-Cookie: {}\r\n{}\r\n",
+                                redirect_to, cookie, eh
+                            );
+                            eprintln!("[platform:{}] auth callback: session created", app_name);
+                            return stream.write_all(resp.as_bytes());
+                        }
+                        Err(e) => {
+                            eprintln!("[platform:{}] auth callback error: {}", app_name, e);
+                            let msg = format!("{{\"error\":\"{}\"}}", e);
+                            let resp = format!(
+                                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                                msg.len()
+                            );
+                            stream.write_all(resp.as_bytes())?;
+                            return stream.write_all(msg.as_bytes());
+                        }
+                    }
+                }
+                ("POST", "/auth/logout") if app.auth.is_some() => {
+                    let auth = app.auth.as_ref().unwrap();
+                    let cookie = auth.logout(&req_headers);
+                    let msg = "{\"ok\":true}";
+                    let eh = format_extra_headers(&extra_headers);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nSet-Cookie: {}\r\nContent-Length: {}\r\n{}\r\n",
+                        cookie, msg.len(), eh
+                    );
+                    stream.write_all(resp.as_bytes())?;
+                    return stream.write_all(msg.as_bytes());
+                }
+                // ── Standard app routes ──────────────────────────
                 ("GET", "/sse") => {
-                    return handle_app_sse(stream, &app, &extra_headers);
+                    return handle_app_sse(stream, &app, &extra_headers, &req_headers);
                 }
                 ("POST", p) if p.starts_with("/actions/") => {
                     let mut body = vec![0u8; content_length];
                     if content_length > 0 { reader.read_exact(&mut body)?; }
                     let result = handle_app_action(
-                        &mut stream, &app, p, &body, &extra_headers,
+                        &mut stream, &app, p, &body, &extra_headers, &req_headers,
                     );
                     let ms = log_start.elapsed().as_millis();
                     eprintln!("[platform] {} /apps/{}{} → ({}ms)", method, app_name, p, ms);
@@ -413,7 +540,7 @@ fn handle_platform_connection(
                 ("GET", p) => {
                     let result = handle_app_get(
                         &mut stream, &app, app_name, p, &extra_headers,
-                        via_subdomain.is_some(),
+                        via_subdomain.is_some(), &req_headers,
                     );
                     let ms = log_start.elapsed().as_millis();
                     eprintln!("[platform] {} /apps/{}{} → ({}ms)", method, app_name, p, ms);
@@ -497,6 +624,14 @@ fn handle_deploy(
     std::fs::write(format!("{}/bundle.js", app_dir), bundle)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
+    // Write data layer config (if present in payload)
+    if let Some(config_str) = payload.get("config").and_then(|v| v.as_str()) {
+        if !config_str.is_empty() && config_str != "null" {
+            let _ = std::fs::write(format!("{}/config.json", app_dir), config_str);
+            eprintln!("[platform] Saved data layer config for '{}'", name);
+        }
+    }
+
     // Write assets
     if let Some(assets) = payload.get("assets").and_then(|v| v.as_object()) {
         for (filename, content) in assets {
@@ -551,6 +686,7 @@ fn handle_app_sse(
     mut stream: TcpStream,
     app: &AppHandle,
     extra_headers: &HashMap<String, String>,
+    _req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     let eh = format_extra_headers(extra_headers);
     let header = format!(
@@ -589,11 +725,12 @@ fn handle_app_action(
     url_path: &str,
     body: &[u8],
     extra_headers: &HashMap<String, String>,
+    req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     let action = urlencoding_decode(url_path.strip_prefix("/actions/").unwrap_or(""));
     let body_str = String::from_utf8_lossy(body);
 
-    let payload = if body_str.is_empty() { "{}".to_string() } else {
+    let payload_str = if body_str.is_empty() { "{}".to_string() } else {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body_str) {
             if let Some(p) = val.get("payload") { p.to_string() } else { val.to_string() }
         } else { "{}".to_string() }
@@ -606,35 +743,110 @@ fn handle_app_action(
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
 
+    // Extract auth token from session (if auth middleware configured)
+    let auth_token = app.auth.as_ref()
+        .and_then(|auth| auth.get_access_token(req_headers));
+
     if action == "navigate" {
-        let nav_path = serde_json::from_str::<serde_json::Value>(&payload)
+        let nav_path = serde_json::from_str::<serde_json::Value>(&payload_str)
             .ok()
             .and_then(|v| v.get("path")?.as_str().map(String::from))
             .unwrap_or_else(|| "/".to_string());
 
         *app.current_path.lock().unwrap() = nav_path.clone();
-        let reply = Reply::new();
-        if tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).is_err() {
-            let msg = "{\"error\":\"V8 thread unavailable\"}";
-            let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
-            stream.write_all(resp.as_bytes())?;
-            return stream.write_all(msg.as_bytes());
+
+        // On navigation, fetch page-scoped data sources for the new page
+        if let Some(ref ctx) = app.data_ctx {
+            fetch_page_data_with_token(ctx, &nav_path, auth_token.as_deref());
+            let data_json = ctx.data_json_for_page(&nav_path);
+            let reply = Reply::new();
+            if tx.send(V8Request::RenderWithData {
+                path: nav_path, data_json, reply: reply.clone(),
+            }).is_err() {
+                let msg = "{\"error\":\"V8 thread unavailable\"}";
+                let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+                stream.write_all(resp.as_bytes())?;
+                return stream.write_all(msg.as_bytes());
+            }
+            let dom_json = v8_result_to_json(reply.recv(), None);
+            snapshot = format!("{{\"root\":{}}}", dom_json);
+        } else {
+            let reply = Reply::new();
+            if tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).is_err() {
+                let msg = "{\"error\":\"V8 thread unavailable\"}";
+                let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+                stream.write_all(resp.as_bytes())?;
+                return stream.write_all(msg.as_bytes());
+            }
+            let dom_json = v8_result_to_json(reply.recv(), None);
+            snapshot = format!("{{\"root\":{}}}", dom_json);
         }
-        let dom_json = v8_result_to_json(reply.recv(), None);
-        snapshot = format!("{{\"root\":{}}}", dom_json);
     } else {
         let path = app.current_path.lock().unwrap().clone();
-        let reply = Reply::new();
-        if tx.send(V8Request::Reduce {
-            action: action.clone(), payload, path, reply: reply.clone(),
-        }).is_err() {
-            let msg = "{\"error\":\"V8 thread unavailable\"}";
-            let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
-            stream.write_all(resp.as_bytes())?;
-            return stream.write_all(msg.as_bytes());
+        let payload_val: serde_json::Value = serde_json::from_str(&payload_str).unwrap_or_default();
+
+        // Check if this action maps to an external API
+        if let Some(ref ctx) = app.data_ctx {
+            if let Some(mapping) = ctx.find_action(&action) {
+                let mapping = mapping.clone();
+                eprintln!("[platform:{}] external action '{}' → {} {}", app.name, action, mapping.method, mapping.url);
+
+                // Forward to backend API
+                match forward_action(&mapping, &payload_val) {
+                    Ok(response_val) => {
+                        // If action has a target, update that data source
+                        if let Some(ref target) = mapping.target {
+                            ctx.set_value(target, response_val);
+                        }
+                        // Re-fetch affected data sources for current page
+                        fetch_page_data_with_token(ctx, &path, auth_token.as_deref());
+                    }
+                    Err(e) => {
+                        eprintln!("[platform:{}] action forward error: {}", app.name, e);
+                    }
+                }
+
+                // Render with updated data
+                let data_json = ctx.data_json_for_page(&path);
+                let reply = Reply::new();
+                if tx.send(V8Request::RenderWithData {
+                    path: path.clone(), data_json, reply: reply.clone(),
+                }).is_err() {
+                    let msg = "{\"error\":\"V8 thread unavailable\"}";
+                    let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+                    stream.write_all(resp.as_bytes())?;
+                    return stream.write_all(msg.as_bytes());
+                }
+                let dom_json = v8_result_to_json(reply.recv(), Some(&action));
+                snapshot = format!("{{\"root\":{}}}", dom_json);
+            } else {
+                // Not an external action — fall through to local reducer
+                let reply = Reply::new();
+                if tx.send(V8Request::Reduce {
+                    action: action.clone(), payload: payload_str, path, reply: reply.clone(),
+                }).is_err() {
+                    let msg = "{\"error\":\"V8 thread unavailable\"}";
+                    let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+                    stream.write_all(resp.as_bytes())?;
+                    return stream.write_all(msg.as_bytes());
+                }
+                let dom_json = v8_result_to_json(reply.recv(), Some(&action));
+                snapshot = format!("{{\"root\":{}}}", dom_json);
+            }
+        } else {
+            // No data layer — standard reducer path
+            let reply = Reply::new();
+            if tx.send(V8Request::Reduce {
+                action: action.clone(), payload: payload_str, path, reply: reply.clone(),
+            }).is_err() {
+                let msg = "{\"error\":\"V8 thread unavailable\"}";
+                let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
+                stream.write_all(resp.as_bytes())?;
+                return stream.write_all(msg.as_bytes());
+            }
+            let dom_json = v8_result_to_json(reply.recv(), Some(&action));
+            snapshot = format!("{{\"root\":{}}}", dom_json);
         }
-        let dom_json = v8_result_to_json(reply.recv(), Some(&action));
-        snapshot = format!("{{\"root\":{}}}", dom_json);
     }
 
     let eh = format_extra_headers(extra_headers);
@@ -666,6 +878,7 @@ fn handle_app_get(
     path: &str,
     extra_headers: &HashMap<String, String>,
     via_subdomain: bool,
+    req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     // Static files
     let has_ext = path.contains('.') && !path.ends_with('/');
@@ -719,14 +932,32 @@ fn handle_app_get(
     let route_path = path.split('?').next().unwrap_or("/");
     *app.current_path.lock().unwrap() = route_path.to_string();
 
+    // Extract auth token from session (if auth middleware configured)
+    let auth_token = app.auth.as_ref()
+        .and_then(|auth| auth.get_access_token(req_headers));
+
+    // Fetch page-scoped data sources and inject into V8 before render
     let reply = Reply::new();
-    if tx.send(V8Request::Render {
-        path: route_path.to_string(), reply: reply.clone(),
-    }).is_err() {
-        let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
-        let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n", msg.len());
-        stream.write_all(resp.as_bytes())?;
-        return stream.write_all(msg.as_bytes());
+    if let Some(ref ctx) = app.data_ctx {
+        fetch_page_data_with_token(ctx, route_path, auth_token.as_deref());
+        let data_json = ctx.data_json_for_page(route_path);
+        if tx.send(V8Request::RenderWithData {
+            path: route_path.to_string(), data_json, reply: reply.clone(),
+        }).is_err() {
+            let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
+            let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n", msg.len());
+            stream.write_all(resp.as_bytes())?;
+            return stream.write_all(msg.as_bytes());
+        }
+    } else {
+        if tx.send(V8Request::Render {
+            path: route_path.to_string(), reply: reply.clone(),
+        }).is_err() {
+            let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
+            let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n", msg.len());
+            stream.write_all(resp.as_bytes())?;
+            return stream.write_all(msg.as_bytes());
+        }
     }
 
     let dom = match reply.recv() {

@@ -13,6 +13,8 @@
 //!   magnetic-v8-server --platform --port 3003 --data-dir data/apps
 
 mod platform;
+pub mod data;
+pub mod auth;
 
 use magnetic_dom::DomNode;
 use magnetic_render_html::{render_to_html, render_page, PageOptions};
@@ -316,6 +318,10 @@ pub fn error_fallback(error_msg: &str, action: Option<&str>) -> DomNode {
 pub enum V8Request {
     Render { path: String, reply: Arc<Reply> },
     Reduce { action: String, payload: String, path: String, reply: Arc<Reply> },
+    /// Inject data context into V8 (calls MagneticApp.setData(json))
+    SetData { json: String, reply: Arc<Reply> },
+    /// Inject data then render (combined for atomicity)
+    RenderWithData { path: String, data_json: String, reply: Arc<Reply> },
 }
 
 pub struct Reply {
@@ -379,7 +385,19 @@ pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
                 );
                 if let V8Result::Err(e) = reduce_result {
                     eprintln!("[magnetic-v8] reduce error on \"{}\": {}", action, e);
-                    // On reduce error, still render current state (unchanged)
+                }
+                let result = v8_call_render(&mut isolate, &global_context, &path);
+                reply.send(result);
+            }
+            V8Request::SetData { json, reply } => {
+                let result = v8_call_set_data(&mut isolate, &global_context, &json);
+                reply.send(result);
+            }
+            V8Request::RenderWithData { path, data_json, reply } => {
+                // Inject data context first, then render
+                let set_result = v8_call_set_data(&mut isolate, &global_context, &data_json);
+                if let V8Result::Err(e) = set_result {
+                    eprintln!("[magnetic-v8] setData error: {}", e);
                 }
                 let result = v8_call_render(&mut isolate, &global_context, &path);
                 reply.send(result);
@@ -422,6 +440,43 @@ fn v8_call_render(
             V8Result::Ok(json)
         }
         None => V8Result::Err("render() returned undefined".into()),
+    }
+}
+
+/// Call setData(json) — inject fetched data context before render
+pub fn v8_call_set_data(
+    isolate: &mut v8::OwnedIsolate,
+    context: &v8::Global<v8::Context>,
+    data_json: &str,
+) -> V8Result {
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    let context = v8::Local::new(handle_scope, context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+    // setData is optional — apps without data config won't have it
+    let call_code = format!(
+        r#"(function() {{ try {{ if (globalThis.MagneticApp && globalThis.MagneticApp.setData) {{ globalThis.MagneticApp.setData(JSON.parse('{}')); }} return "ok"; }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e)}}); }} }})()"#,
+        data_json.replace('\\', "\\\\").replace('\'', "\\'")
+    );
+
+    let code = v8::String::new(scope, &call_code).unwrap();
+    let script = match v8::Script::compile(scope, code, None) {
+        Some(s) => s,
+        None => return V8Result::Err("Failed to compile setData call".into()),
+    };
+    match script.run(scope) {
+        Some(result) => {
+            let out = result.to_rust_string_lossy(scope);
+            if out.contains("\"__error\"") {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&out) {
+                    if let Some(msg) = val.get("__error").and_then(|v| v.as_str()) {
+                        return V8Result::Err(msg.to_string());
+                    }
+                }
+            }
+            V8Result::Ok(out)
+        }
+        None => V8Result::Err("setData() returned undefined".into()),
     }
 }
 

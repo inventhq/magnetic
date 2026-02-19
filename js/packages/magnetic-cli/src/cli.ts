@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline';
 import { scanApp, generateBridge } from './generator.ts';
 import { bundleApp, buildForDeploy } from './bundler.ts';
 import { startDev } from './dev.ts';
+import { parseAppConfig, serializeConfigForServer } from './config.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -130,13 +131,16 @@ async function main() {
       log('info', `Building ${appDir}`);
       const buildStart = Date.now();
       const scan = scanApp(appDir, monorepoRoot || undefined);
+      const appConfig = parseAppConfig(appDir);
       log('info', `Scanned: ${scan.pages.length} pages, state: ${scan.statePath || 'none (using defaults)'}`);
+      if (appConfig.data.length > 0) log('info', `Data sources: ${appConfig.data.length}`);
+      if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
 
       for (const page of scan.pages) {
         log('debug', `  route ${page.routePath.padEnd(15)} ← ${page.filePath}`);
       }
 
-      const bridgeCode = generateBridge(scan);
+      const bridgeCode = generateBridge(scan, appConfig);
       log('debug', `Bridge generated: ${bridgeCode.split('\n').length} lines`);
 
       if (args.includes('--verbose')) {
@@ -231,9 +235,13 @@ async function main() {
 
       log('info', `Building for deploy...`);
       const scan = scanApp(appDir, monorepoRoot || undefined);
+      const appConfig = parseAppConfig(appDir);
       log('info', `Scanned: ${scan.pages.length} pages, state: ${scan.statePath || 'none'}`);
-      const bridgeCode = generateBridge(scan);
+      if (appConfig.data.length > 0) log('info', `Data sources: ${appConfig.data.length}`);
+      if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
+      const bridgeCode = generateBridge(scan, appConfig);
       const deploy = await buildForDeploy({ appDir, bridgeCode, monorepoRoot: monorepoRoot || undefined });
+      const serverConfig = serializeConfigForServer(appConfig);
 
       log('info', `Bundle: ${(deploy.bundleSize / 1024).toFixed(1)}KB (minified)`);
       log('info', `Assets: ${Object.keys(deploy.assets).length} files`);
@@ -256,6 +264,7 @@ async function main() {
             name: appName,
             bundle: bundleContent,
             assets: deploy.assets,
+            config: serverConfig,
           }),
         });
 
@@ -278,6 +287,7 @@ async function main() {
           body: JSON.stringify({
             bundle: bundleContent,
             assets: deploy.assets,
+            config: serverConfig,
           }),
         });
 
