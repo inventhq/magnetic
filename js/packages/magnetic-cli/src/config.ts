@@ -41,11 +41,11 @@ export interface ActionMapping {
 // ── Auth config ─────────────────────────────────────────────────────
 
 export interface AuthConfig {
-  /** Provider type: oauth2, oidc, jwt, api-key */
-  provider: 'oauth2' | 'oidc' | 'jwt' | 'api-key';
+  /** Provider type: oauth2, oidc, magic-link, otp */
+  provider: 'oauth2' | 'oidc' | 'magic-link' | 'otp';
   /** Issuer URL (for oauth2/oidc) */
   issuer?: string;
-  /** OAuth client ID */
+  /** OAuth client ID (also project ID for Stytch etc.) */
   client_id?: string;
   /** OAuth client secret */
   client_secret?: string;
@@ -53,6 +53,14 @@ export interface AuthConfig {
   scopes?: string[];
   /** Redirect URI for OAuth callback */
   redirect_uri?: string;
+  /** Login URL for magic-link/OTP providers (where the initial send request goes) */
+  login_url?: string;
+  /** Verify URL for magic-link/OTP providers (where tokens/codes are verified) */
+  verify_url?: string;
+  /** JSON field name containing the session token in verify response (default: "session_token") */
+  token_field?: string;
+  /** Token lifetime in seconds if provider doesn't return expires_in (default: 3600) */
+  token_expires_in?: number;
   /** Session config */
   session?: {
     cookie?: string;
@@ -130,6 +138,10 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
       client_secret: raw.auth.client_secret,
       scopes: raw.auth.scopes,
       redirect_uri: raw.auth.redirect_uri || '/auth/callback',
+      login_url: raw.auth.login_url,
+      verify_url: raw.auth.verify_url,
+      token_field: raw.auth.token_field,
+      token_expires_in: raw.auth.token_expires_in,
       session: raw.auth.session || { cookie: 'magnetic_session', ttl: '24h' },
     };
   }

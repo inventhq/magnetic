@@ -24,14 +24,26 @@ pub struct DataLayerConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthConfig {
+    /// Provider type: "oidc", "oauth2", "magic-link", "otp"
     pub provider: String,
+    /// Issuer URL (for oauth2/oidc)
     pub issuer: Option<String>,
+    /// OAuth client ID (also used as project ID for Stytch etc.)
     pub client_id: Option<String>,
+    /// OAuth client secret
     pub client_secret: Option<String>,
     #[serde(default)]
     pub scopes: Vec<String>,
     pub redirect_uri: Option<String>,
     pub session: Option<SessionConfig>,
+    /// Login URL for magic-link / OTP providers (where the initial request goes)
+    pub login_url: Option<String>,
+    /// Verify/authenticate URL for magic-link / OTP providers
+    pub verify_url: Option<String>,
+    /// JSON field name containing the session token in verify response (default: "session_token")
+    pub token_field: Option<String>,
+    /// Token lifetime in seconds if provider doesn't return expires_in (default: 3600)
+    pub token_expires_in: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

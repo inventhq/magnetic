@@ -465,12 +465,17 @@ fn handle_platform_connection(
                 }
                 ("GET", p) if p.starts_with("/auth/callback") && app.auth.is_some() => {
                     let auth = app.auth.as_ref().unwrap();
-                    // Extract ?code= from query string
+                    // Extract ?code= (OAuth2) or ?token= (magic-link) from query string
                     let code = path.split("code=").nth(1)
                         .and_then(|s| s.split('&').next())
                         .unwrap_or("");
-                    if code.is_empty() {
-                        let msg = "{\"error\":\"Missing authorization code\"}";
+                    let token = path.split("token=").nth(1)
+                        .and_then(|s| s.split('&').next())
+                        .unwrap_or("");
+                    // Use token for magic-link, code for OAuth2
+                    let exchange_value = if !token.is_empty() { token } else { code };
+                    if exchange_value.is_empty() {
+                        let msg = "{\"error\":\"Missing authorization code or token\"}";
                         let resp = format!(
                             "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
                             msg.len()
@@ -478,14 +483,13 @@ fn handle_platform_connection(
                         stream.write_all(resp.as_bytes())?;
                         return stream.write_all(msg.as_bytes());
                     }
-                    match auth.exchange_code(code) {
+                    match auth.exchange_code(exchange_value) {
                         Ok((access_token, refresh_token, expires_in)) => {
                             let (_session_id, cookie) = auth.create_session(
                                 &access_token,
                                 refresh_token.as_deref(),
                                 expires_in,
                             );
-                            // Redirect back to app root
                             let redirect_to = if via_subdomain.is_some() {
                                 "/".to_string()
                             } else {
@@ -496,7 +500,7 @@ fn handle_platform_connection(
                                 "HTTP/1.1 302 Found\r\nLocation: {}\r\nSet-Cookie: {}\r\n{}\r\n",
                                 redirect_to, cookie, eh
                             );
-                            eprintln!("[platform:{}] auth callback: session created", app_name);
+                            eprintln!("[platform:{}] auth callback: session created ({})", app_name, auth.provider());
                             return stream.write_all(resp.as_bytes());
                         }
                         Err(e) => {
@@ -504,6 +508,115 @@ fn handle_platform_connection(
                             let msg = format!("{{\"error\":\"{}\"}}", e);
                             let resp = format!(
                                 "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                                msg.len()
+                            );
+                            stream.write_all(resp.as_bytes())?;
+                            return stream.write_all(msg.as_bytes());
+                        }
+                    }
+                }
+                // POST /auth/send — send magic-link or OTP email
+                ("POST", "/auth/send") if app.auth.is_some() => {
+                    let auth = app.auth.as_ref().unwrap();
+                    if !auth.is_magic_link() && !auth.is_otp() {
+                        let msg = "{\"error\":\"This auth provider does not support /auth/send\"}";
+                        let resp = format!(
+                            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                            msg.len()
+                        );
+                        stream.write_all(resp.as_bytes())?;
+                        return stream.write_all(msg.as_bytes());
+                    }
+                    let mut body = vec![0u8; content_length];
+                    if content_length > 0 { reader.read_exact(&mut body)?; }
+                    let body_str = String::from_utf8_lossy(&body);
+                    let email = serde_json::from_str::<serde_json::Value>(&body_str)
+                        .ok()
+                        .and_then(|v| v.get("email")?.as_str().map(String::from))
+                        .unwrap_or_default();
+                    if email.is_empty() {
+                        let msg = "{\"error\":\"Missing email in request body\"}";
+                        let resp = format!(
+                            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                            msg.len()
+                        );
+                        stream.write_all(resp.as_bytes())?;
+                        return stream.write_all(msg.as_bytes());
+                    }
+                    match auth.send_auth_email(&email) {
+                        Ok(result) => {
+                            let msg = result.to_string();
+                            let eh = format_extra_headers(&extra_headers);
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{}\r\n",
+                                msg.len(), eh
+                            );
+                            eprintln!("[platform:{}] auth send: {} to {}", app_name, auth.provider(), email);
+                            stream.write_all(resp.as_bytes())?;
+                            return stream.write_all(msg.as_bytes());
+                        }
+                        Err(e) => {
+                            eprintln!("[platform:{}] auth send error: {}", app_name, e);
+                            let msg = format!("{{\"error\":\"{}\"}}", e);
+                            let resp = format!(
+                                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                                msg.len()
+                            );
+                            stream.write_all(resp.as_bytes())?;
+                            return stream.write_all(msg.as_bytes());
+                        }
+                    }
+                }
+                // POST /auth/verify — verify OTP code
+                ("POST", "/auth/verify") if app.auth.is_some() => {
+                    let auth = app.auth.as_ref().unwrap();
+                    if !auth.is_otp() {
+                        let msg = "{\"error\":\"This auth provider does not support /auth/verify\"}";
+                        let resp = format!(
+                            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                            msg.len()
+                        );
+                        stream.write_all(resp.as_bytes())?;
+                        return stream.write_all(msg.as_bytes());
+                    }
+                    let mut body = vec![0u8; content_length];
+                    if content_length > 0 { reader.read_exact(&mut body)?; }
+                    let body_str = String::from_utf8_lossy(&body);
+                    let json_body = serde_json::from_str::<serde_json::Value>(&body_str)
+                        .unwrap_or(serde_json::json!({}));
+                    let code = json_body.get("code").and_then(|v| v.as_str()).unwrap_or("");
+                    let method_id = json_body.get("method_id").and_then(|v| v.as_str()).unwrap_or("");
+                    if code.is_empty() {
+                        let msg = "{\"error\":\"Missing code in request body\"}";
+                        let resp = format!(
+                            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                            msg.len()
+                        );
+                        stream.write_all(resp.as_bytes())?;
+                        return stream.write_all(msg.as_bytes());
+                    }
+                    match auth.verify_otp_code(code, method_id) {
+                        Ok((access_token, refresh_token, expires_in)) => {
+                            let (_session_id, cookie) = auth.create_session(
+                                &access_token,
+                                refresh_token.as_deref(),
+                                expires_in,
+                            );
+                            let msg = "{\"ok\":true}";
+                            let eh = format_extra_headers(&extra_headers);
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nSet-Cookie: {}\r\nContent-Length: {}\r\n{}\r\n",
+                                cookie, msg.len(), eh
+                            );
+                            eprintln!("[platform:{}] auth verify: OTP verified, session created", app_name);
+                            stream.write_all(resp.as_bytes())?;
+                            return stream.write_all(msg.as_bytes());
+                        }
+                        Err(e) => {
+                            eprintln!("[platform:{}] auth verify error: {}", app_name, e);
+                            let msg = format!("{{\"error\":\"{}\"}}", e);
+                            let resp = format!(
+                                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
                                 msg.len()
                             );
                             stream.write_all(resp.as_bytes())?;

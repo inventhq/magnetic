@@ -141,6 +141,148 @@ pub fn refresh_token(
     Ok((access_token, new_refresh, expires_in))
 }
 
+// ── Magic-link / Token-based auth ───────────────────────────────────
+
+/// Verify a token received directly in the callback URL (magic-link style).
+/// Calls the provider's verify/authenticate endpoint with the token.
+/// Returns (session_token, None, expires_in).
+pub fn verify_magic_link_token(
+    verify_url: &str,
+    token: &str,
+    token_field: &str,
+    default_expires: u64,
+) -> Result<(String, Option<String>, u64), String> {
+    eprintln!("[auth] verifying magic-link token at {}", verify_url);
+
+    let body = serde_json::json!({ "token": token });
+
+    let resp = ureq::post(verify_url)
+        .set("Content-Type", "application/json")
+        .send_string(&body.to_string())
+        .map_err(|e| format!("magic-link verify failed: {}", e))?;
+
+    let text = resp.into_string()
+        .map_err(|e| format!("magic-link verify read: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("magic-link verify parse: {}", e))?;
+
+    // Try the configured token_field, then common alternatives
+    let session_token = json.get(token_field)
+        .or_else(|| json.get("session_token"))
+        .or_else(|| json.get("access_token"))
+        .or_else(|| json.get("token"))
+        .and_then(|v: &serde_json::Value| v.as_str())
+        .ok_or_else(|| format!("No '{}' in magic-link verify response", token_field))?
+        .to_string();
+
+    let expires_in = json.get("expires_in")
+        .and_then(|v: &serde_json::Value| v.as_u64())
+        .unwrap_or(default_expires);
+
+    eprintln!("[auth] magic-link verified (expires_in={}s)", expires_in);
+    Ok((session_token, None, expires_in))
+}
+
+// ── OTP / API-based auth ────────────────────────────────────────────
+
+/// Send an OTP or magic-link email via the provider's login API.
+/// Returns the response body (may contain a method_id or status).
+pub fn send_otp(
+    login_url: &str,
+    email: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<serde_json::Value, String> {
+    eprintln!("[auth] sending OTP/magic-link to {} via {}", email, login_url);
+
+    let body = serde_json::json!({ "email": email });
+
+    let resp = ureq::post(login_url)
+        .set("Content-Type", "application/json")
+        .set("Authorization", &format!("Basic {}", base64_encode(&format!("{}:{}", client_id, client_secret))))
+        .send_string(&body.to_string())
+        .map_err(|e| format!("OTP send failed: {}", e))?;
+
+    let text = resp.into_string()
+        .map_err(|e| format!("OTP send read: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("OTP send parse: {}", e))?;
+
+    eprintln!("[auth] OTP/magic-link sent successfully");
+    Ok(json)
+}
+
+/// Verify an OTP code via the provider's verify API.
+/// Returns (session_token, None, expires_in).
+pub fn verify_otp(
+    verify_url: &str,
+    code: &str,
+    method_id: &str,
+    client_id: &str,
+    client_secret: &str,
+    token_field: &str,
+    default_expires: u64,
+) -> Result<(String, Option<String>, u64), String> {
+    eprintln!("[auth] verifying OTP at {}", verify_url);
+
+    let body = serde_json::json!({
+        "code": code,
+        "method_id": method_id,
+    });
+
+    let resp = ureq::post(verify_url)
+        .set("Content-Type", "application/json")
+        .set("Authorization", &format!("Basic {}", base64_encode(&format!("{}:{}", client_id, client_secret))))
+        .send_string(&body.to_string())
+        .map_err(|e| format!("OTP verify failed: {}", e))?;
+
+    let text = resp.into_string()
+        .map_err(|e| format!("OTP verify read: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("OTP verify parse: {}", e))?;
+
+    let session_token = json.get(token_field)
+        .or_else(|| json.get("session_token"))
+        .or_else(|| json.get("access_token"))
+        .or_else(|| json.get("token"))
+        .and_then(|v: &serde_json::Value| v.as_str())
+        .ok_or_else(|| format!("No '{}' in OTP verify response", token_field))?
+        .to_string();
+
+    let expires_in = json.get("expires_in")
+        .and_then(|v: &serde_json::Value| v.as_u64())
+        .unwrap_or(default_expires);
+
+    eprintln!("[auth] OTP verified (expires_in={}s)", expires_in);
+    Ok((session_token, None, expires_in))
+}
+
+/// Minimal base64 encoder (for Basic auth header).
+fn base64_encode(input: &str) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
 fn urlencoding(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for b in s.bytes() {
