@@ -39,8 +39,21 @@ export interface ThemeConfig {
   breakpoints: BreakpointScale;
 }
 
+/**
+ * CSS generation mode (set in design.json → "css" field).
+ *
+ * - "all"   — emit every utility class (~13KB). Safest for SSE. (default)
+ * - "pages" — render all routes at init, emit only classes that appear (~3-5KB).
+ *             Still SSE-safe because every navigable page is scanned.
+ * - "used"  — per-request extraction, emit only classes in the current page (~2-3KB).
+ *             Smallest output but SSE updates may reference unstyled classes.
+ */
+export type CSSMode = 'all' | 'pages' | 'used';
+
 /** Root design.json structure. */
 export interface DesignConfig {
+  /** CSS generation mode. Default: "all". */
+  css?: CSSMode;
   theme: ThemeConfig;
 }
 

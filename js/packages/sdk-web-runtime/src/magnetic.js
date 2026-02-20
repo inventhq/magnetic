@@ -163,8 +163,14 @@
     }
   }
 
+  var UNSAFE_URI = /^\s*javascript\s*:/i;
+  var URI_ATTRS = { href: 1, src: 1, action: 1, formaction: 1, "xlink:href": 1 };
   function setAttrs(el, n) {
-    if (n.attrs) for (var k in n.attrs) el.setAttribute(k, n.attrs[k]);
+    if (n.attrs) for (var k in n.attrs) {
+      var v = n.attrs[k];
+      if (URI_ATTRS[k] && UNSAFE_URI.test(v)) continue;
+      el.setAttribute(k, v);
+    }
   }
 
   // --- Event delegation ---

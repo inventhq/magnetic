@@ -80,6 +80,7 @@ function usage() {
     magnetic dev              Start dev mode (watch + rebuild + serve)
     magnetic build            Build the app bundle for deployment
     magnetic push             Build and deploy to a Magnetic platform server
+    magnetic openapi          Detect OpenAPI specs from data sources and generate types
     magnetic login            Authenticate with Magnetic Cloud
     magnetic whoami           Show current authenticated user
 
@@ -234,6 +235,56 @@ async function main() {
       } else {
         log('error', 'Invalid API key. Run: magnetic login');
         process.exit(1);
+      }
+      break;
+    }
+
+    case 'openapi': {
+      const appConfig = parseAppConfig(appDir);
+      const urls = appConfig.data.map(d => d.url).filter(Boolean);
+
+      if (urls.length === 0) {
+        log('error', 'No data sources in magnetic.json — nothing to detect');
+        process.exit(1);
+      }
+
+      log('info', `Probing ${urls.length} data source(s) for OpenAPI/Swagger specs...`);
+
+      const { discoverAll, parse, generateTypes, suggestDataSources } = await import('@magneticjs/openapi') as any;
+      const results = await discoverAll(urls);
+
+      let foundAny = false;
+      for (const [base, result] of results) {
+        if (result.found) {
+          foundAny = true;
+          log('info', `✓ Found ${result.version} spec at ${result.specUrl}`);
+
+          const api = parse(result.spec, result.version!);
+          log('info', `  ${api.title} v${api.version} — ${api.endpoints.length} endpoints, ${api.schemas.length} schemas`);
+
+          // Generate types
+          const types = generateTypes(api);
+          const outPath = join(appDir, 'server', 'api-types.ts');
+          mkdirSync(join(appDir, 'server'), { recursive: true });
+          writeFileSync(outPath, types);
+          log('info', `  Types written to ${outPath}`);
+
+          // Suggest data sources
+          const suggested = suggestDataSources(api);
+          const suggestedCount = Object.keys(suggested).length;
+          if (suggestedCount > 0) {
+            log('info', `  Suggested data sources (${suggestedCount}):`);
+            for (const [key, src] of Object.entries(suggested) as [string, any][]) {
+              log('debug', `    "${key}": { "url": "${src.url}", "auth": ${src.auth} }`);
+            }
+          }
+        } else {
+          log('warn', `No spec found at ${base}: ${result.error}`);
+        }
+      }
+
+      if (!foundAny) {
+        log('warn', 'No OpenAPI/Swagger specs detected. Types not generated.');
       }
       break;
     }

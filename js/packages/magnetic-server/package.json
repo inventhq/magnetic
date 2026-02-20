@@ -1,6 +1,6 @@
 {
   "name": "@magneticjs/server",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Magnetic server-driven UI framework — JSX runtime, router, SSR",
   "type": "module",
   "exports": {

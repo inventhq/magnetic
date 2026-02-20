@@ -11,6 +11,7 @@ export type {
   RadiusScale,
   ShadowScale,
   BreakpointScale,
+  CSSMode,
   DomNode,
   UtilityMap,
   ResponsiveEntry,

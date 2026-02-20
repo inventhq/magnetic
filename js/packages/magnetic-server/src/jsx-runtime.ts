@@ -46,6 +46,9 @@ export function Head({ children }: { children?: Child | Child[] }): DomNode {
   return { tag: 'magnetic:head', children: flat };
 }
 
+// URI attributes to sanitize against javascript: injection
+const URI_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'xlink:href']);
+
 // Event prop prefix → event name mapping
 const EVENT_MAP: Record<string, string> = {
   onClick: 'click',
@@ -111,7 +114,11 @@ export function jsx(tag: string | Component, props: Props, key?: string | number
       continue;
     }
 
-    attrs[k] = String(v);
+    // Sanitize URI attributes — defense in depth against javascript: injection
+    const sv = String(v);
+    if (URI_ATTRS.has(k) && /^\s*javascript\s*:/i.test(sv)) continue;
+
+    attrs[k] = sv;
   }
 
   if (Object.keys(attrs).length) node.attrs = attrs;

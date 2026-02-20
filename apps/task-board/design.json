@@ -1,4 +1,5 @@
 {
+  "css": "pages",
   "theme": {
     "colors": {
       "primary": "#6366f1",
