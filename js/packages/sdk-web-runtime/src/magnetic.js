@@ -118,7 +118,7 @@
   // Remove a DOM subtree's keys from the global cache
   function purgeKeys(el) {
     var k = el.dataset ? el.dataset.key : null;
-    if (k) delete keys[k];
+    if (k && keys[k] === el) delete keys[k];
     var ch = el.firstChild;
     while (ch) { purgeKeys(ch); ch = ch.nextSibling; }
   }
@@ -148,7 +148,7 @@
     while (ch) {
       var nx = ch.nextSibling;
       k = ch.dataset ? ch.dataset.key : null;
-      if (!k || !wantKeys[k]) {
+      if (!k || !wantKeys[k] || keys[k] !== ch) {
         purgeKeys(ch);
         parent.removeChild(ch);
       }
