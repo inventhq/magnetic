@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@magnetic/server",
+    "strict": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@magnetic/server/*": ["../../js/packages/magnetic-server/src/*"]
+    }
+  },
+  "include": ["pages/**/*.tsx", "server/**/*.ts"]
+}

@@ -1,0 +1,16 @@
+/* Shipment tracker — minimal custom styles (most styling via @magneticjs/css utilities) */
+
+body {
+  background: var(--m-surface);
+  color: var(--m-text);
+  font-family: var(--m-font-sans);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.bg-success {
+  animation: pulse 2s ease-in-out infinite;
+}

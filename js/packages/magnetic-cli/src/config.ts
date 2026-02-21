@@ -25,6 +25,8 @@ export interface DataSource {
   timeout?: string;
   /** Number of retry attempts on fetch failure. Default: 0 (no retries) */
   retries?: number;
+  /** For SSE/WS sources: keep last N events as a JSON array. Default: 0 (replace mode) */
+  buffer?: number;
 }
 
 // ── Action mapping types ────────────────────────────────────────────
@@ -171,6 +173,7 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
         auth: src.auth === true,
         timeout: src.timeout,
         retries: src.retries || 0,
+        buffer: src.buffer || 0,
       });
     }
   }

@@ -70,6 +70,9 @@ pub struct DataSourceConfig {
     /// Number of retry attempts on fetch failure. Default: 0 (no retries).
     #[serde(default)]
     pub retries: u32,
+    /// For SSE/WS sources: keep last N events as a JSON array. Default: 0 (replace mode).
+    #[serde(default)]
+    pub buffer: usize,
 }
 
 fn default_source_type() -> String { "fetch".into() }
@@ -417,6 +420,10 @@ pub fn start_poll_threads(
 /// Each thread opens a persistent connection, parses text/event-stream frames,
 /// updates the DataContext, and calls on_change() when new data arrives.
 /// Auto-reconnects on disconnect with exponential backoff (1s → 30s cap).
+///
+/// If `source.buffer > 0`, events are accumulated in a JSON array (last N).
+/// If `source.buffer == 0` (default), each event replaces the previous value.
+/// Events with `event: lag` are skipped (server-side lag notifications).
 pub fn start_sse_threads(
     ctx: Arc<DataContext>,
     on_change: Arc<dyn Fn() + Send + Sync>,
@@ -432,8 +439,12 @@ pub fn start_sse_threads(
 
         thread::spawn(move || {
             let url = resolve_env_vars(&source.url);
+            let buffer_size = source.buffer;
             let mut backoff_ms: u64 = 1000;
             let mut last_event_id = String::new();
+            // Ring buffer for accumulation mode
+            let mut ring: std::collections::VecDeque<serde_json::Value> =
+                std::collections::VecDeque::with_capacity(if buffer_size > 0 { buffer_size } else { 0 });
 
             loop {
                 eprintln!("[data:sse] connecting '{}' → {}", source.key, url);
@@ -449,7 +460,7 @@ pub fn start_sse_threads(
                 match req.call() {
                     Ok(resp) => {
                         backoff_ms = 1000; // reset on successful connect
-                        eprintln!("[data:sse] connected '{}'", source.key);
+                        eprintln!("[data:sse] connected '{}' (buffer={})", source.key, buffer_size);
 
                         let reader = resp.into_reader();
                         let buf = std::io::BufReader::new(reader);
@@ -464,27 +475,33 @@ pub fn start_sse_threads(
                                     if line.is_empty() {
                                         // Empty line = end of event, dispatch
                                         if !data_buf.is_empty() {
-                                            let trimmed = data_buf.trim_end_matches('\n');
-                                            match serde_json::from_str::<serde_json::Value>(trimmed) {
-                                                Ok(value) => {
-                                                    let old = ctx.values.read().unwrap().get(&source.key).cloned();
-                                                    let changed = old.as_ref() != Some(&value);
-                                                    ctx.set_value(&source.key, value);
-                                                    if changed {
-                                                        on_change();
-                                                    }
-                                                }
-                                                Err(_) => {
-                                                    // Not JSON — store as raw string value
-                                                    let old = ctx.values.read().unwrap().get(&source.key).cloned();
-                                                    let value = serde_json::Value::String(trimmed.to_string());
-                                                    let changed = old.as_ref() != Some(&value);
-                                                    ctx.set_value(&source.key, value);
-                                                    if changed {
-                                                        on_change();
-                                                    }
-                                                }
+                                            // Skip lag notifications
+                                            if event_type == "lag" {
+                                                eprintln!("[data:sse] lag: {}", data_buf);
+                                                data_buf.clear();
+                                                event_type.clear();
+                                                continue;
                                             }
+
+                                            let trimmed = data_buf.trim_end_matches('\n');
+                                            let value = match serde_json::from_str::<serde_json::Value>(trimmed) {
+                                                Ok(v) => v,
+                                                Err(_) => serde_json::Value::String(trimmed.to_string()),
+                                            };
+
+                                            if buffer_size > 0 {
+                                                // Buffer mode: accumulate in ring, store as array
+                                                if ring.len() >= buffer_size {
+                                                    ring.pop_front();
+                                                }
+                                                ring.push_back(value);
+                                                let arr = serde_json::Value::Array(ring.iter().cloned().collect());
+                                                ctx.set_value(&source.key, arr);
+                                            } else {
+                                                // Replace mode: store latest value
+                                                ctx.set_value(&source.key, value);
+                                            }
+                                            on_change();
                                             data_buf.clear();
                                             event_type.clear();
                                         }

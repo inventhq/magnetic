@@ -1,0 +1,11 @@
+{
+  "name": "shipment-tracker",
+  "server": "https://api.fujs.dev",
+  "data": {
+    "events": {
+      "url": "https://sse.juicyapi.com/sse/events?key_prefix=6vct",
+      "type": "sse",
+      "buffer": 20
+    }
+  }
+}
