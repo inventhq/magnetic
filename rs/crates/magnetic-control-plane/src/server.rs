@@ -83,6 +83,7 @@ pub struct DeployRequest {
     pub name: Option<String>,
     pub bundle: String,
     pub assets: Option<HashMap<String, String>>,
+    pub config: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -325,6 +326,7 @@ async fn deploy(
     let deploy_payload = serde_json::json!({
         "bundle": req.bundle,
         "assets": req.assets.as_ref().unwrap_or(&HashMap::new()),
+        "config": req.config.as_deref().unwrap_or(""),
     });
 
     let resp = state
