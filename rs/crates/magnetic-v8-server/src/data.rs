@@ -16,10 +16,63 @@ use std::time::{Duration, Instant};
 pub struct DataLayerConfig {
     #[serde(default)]
     pub auth: Option<AuthConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_data_sources")]
     pub data: Vec<DataSourceConfig>,
     #[serde(default)]
     pub actions: Vec<ActionMappingConfig>,
+}
+
+/// Accept data sources as either:
+///   - Array: [{"key":"events","url":"...","type":"sse"}]   (CLI serialized)
+///   - Map:   {"events":{"url":"...","type":"sse"}}         (raw magnetic.json)
+fn deserialize_data_sources<'de, D>(deserializer: D) -> Result<Vec<DataSourceConfig>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DataSourcesFormat {
+        Array(Vec<DataSourceConfig>),
+        Map(HashMap<String, MapDataSource>),
+    }
+
+    #[derive(Deserialize)]
+    struct MapDataSource {
+        url: String,
+        #[serde(default = "default_source_type")]
+        #[serde(rename = "type")]
+        source_type: String,
+        refresh: Option<String>,
+        #[serde(default = "default_page")]
+        page: String,
+        #[serde(default)]
+        auth: bool,
+        timeout: Option<String>,
+        #[serde(default)]
+        retries: u32,
+        #[serde(default)]
+        buffer: usize,
+    }
+
+    match DataSourcesFormat::deserialize(deserializer) {
+        Ok(DataSourcesFormat::Array(arr)) => Ok(arr),
+        Ok(DataSourcesFormat::Map(map)) => {
+            Ok(map.into_iter().map(|(key, src)| DataSourceConfig {
+                key,
+                url: src.url,
+                source_type: src.source_type,
+                refresh: src.refresh,
+                page: src.page,
+                auth: src.auth,
+                timeout: src.timeout,
+                retries: src.retries,
+                buffer: src.buffer,
+            }).collect())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
