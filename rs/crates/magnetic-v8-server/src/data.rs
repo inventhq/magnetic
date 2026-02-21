@@ -487,19 +487,9 @@ pub fn start_poll_threads(
 /// If `source.buffer > 0`, events are accumulated in a JSON array (last N).
 /// If `source.buffer == 0` (default), each event replaces the previous value.
 /// Events with `event: lag` are skipped (server-side lag notifications).
-/// Delta event info passed to the on_sse_event callback.
-/// Contains everything the platform needs to send a lightweight delta to browsers.
-pub struct SseDelta {
-    pub key: String,
-    pub value: serde_json::Value,
-    pub buffer_size: usize,
-    pub target: String,
-}
-
 pub fn start_sse_threads(
     ctx: Arc<DataContext>,
     on_change: Arc<dyn Fn() + Send + Sync>,
-    on_sse_event: Option<Arc<dyn Fn(SseDelta) + Send + Sync>>,
 ) {
     for source in &ctx.config.data {
         if source.source_type != "sse" {
@@ -509,7 +499,6 @@ pub fn start_sse_threads(
         let source = source.clone();
         let ctx = Arc::clone(&ctx);
         let on_change = Arc::clone(&on_change);
-        let on_sse_event = on_sse_event.as_ref().map(Arc::clone);
 
         thread::spawn(move || {
             let url = resolve_env_vars(&source.url);
@@ -563,15 +552,23 @@ pub fn start_sse_threads(
                                                 Err(_) => serde_json::Value::String(trimmed.to_string()),
                                             };
 
-                                            // Delta mode: if source has a target and on_sse_event
-                                            // is registered, send the raw event directly to browsers
-                                            // instead of re-rendering the entire page in V8.
-                                            let use_delta = on_sse_event.is_some()
-                                                && source.target.is_some()
-                                                && buffer_size > 0;
-
                                             if buffer_size > 0 {
                                                 // Buffer mode: accumulate in ring, store as array
+                                                // Dedup: skip if event_id already exists in ring
+                                                let eid = value.get("event_id")
+                                                    .or_else(|| value.get("data").and_then(|d| d.get("event_id")));
+                                                let is_dup = if let Some(id) = eid {
+                                                    ring.iter().any(|v| {
+                                                        v.get("event_id").or_else(|| v.get("data").and_then(|d| d.get("event_id"))) == Some(id)
+                                                    })
+                                                } else { false };
+
+                                                if is_dup {
+                                                    data_buf.clear();
+                                                    event_type.clear();
+                                                    continue;
+                                                }
+
                                                 if ring.len() >= buffer_size {
                                                     ring.pop_front();
                                                 }
@@ -583,23 +580,7 @@ pub fn start_sse_threads(
                                                 ctx.set_value(&source.key, value.clone());
                                             }
 
-                                            if use_delta {
-                                                // Delta path: send raw event directly to browsers.
-                                                // Do NOT call on_change() — the debounced snapshot
-                                                // replaces the entire DOM every ~150ms, fighting
-                                                // with the delta insertions. DataContext is already
-                                                // updated above, so new connections get fresh data
-                                                // via RenderWithData.
-                                                on_sse_event.as_ref().unwrap()(SseDelta {
-                                                    key: source.key.clone(),
-                                                    value,
-                                                    buffer_size,
-                                                    target: source.target.clone().unwrap(),
-                                                });
-                                            } else {
-                                                // Snapshot path: full V8 re-render (debounced)
-                                                on_change();
-                                            }
+                                            on_change();
                                             data_buf.clear();
                                             event_type.clear();
                                         }

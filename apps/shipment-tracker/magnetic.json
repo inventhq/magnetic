@@ -3,7 +3,7 @@
   "server": "https://api.fujs.dev",
   "data": {
     "events": {
-      "url": "https://sse.juicyapi.com/sse/events?key_prefix=6vct",
+      "url": "https://sse.juicyapi.com/sse/events?key_prefix=6vct&event_type=shipment.tracked,shipment.status_updated",
       "type": "sse",
       "buffer": 20,
       "target": "feed"

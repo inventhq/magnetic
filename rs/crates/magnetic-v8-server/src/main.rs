@@ -45,7 +45,9 @@ pub fn serve_embedded(
     filename: &str,
     extra_headers: &HashMap<String, String>,
 ) -> Option<std::io::Result<()>> {
-    let (data, content_type): (&[u8], &str) = match filename {
+    // Strip query string (e.g. "magnetic.js?v=abc" → "magnetic.js")
+    let bare = filename.split('?').next().unwrap_or(filename);
+    let (data, content_type): (&[u8], &str) = match bare {
         "magnetic.js" => (EMBEDDED_MAGNETIC_JS, "application/javascript"),
         "transport.wasm" => (EMBEDDED_TRANSPORT_WASM, "application/wasm"),
         _ => return None,
