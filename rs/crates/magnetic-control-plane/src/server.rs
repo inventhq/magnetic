@@ -323,28 +323,53 @@ async fn deploy(
 
     // Deploy to node: POST /api/apps/{app_id}/deploy
     let node_url = format!("http://{}:{}", node.ip, node.port);
+    let deploy_url = format!("{}/api/apps/{}/deploy", node_url, app_id);
+    let bundle_len = req.bundle.len();
+    let has_config = req.config.is_some();
+    let asset_count = req.assets.as_ref().map(|a| a.len()).unwrap_or(0);
+
+    eprintln!(
+        "[deploy] forwarding to {} (bundle={}B, assets={}, config={})",
+        deploy_url, bundle_len, asset_count, has_config
+    );
+
     let deploy_payload = serde_json::json!({
         "bundle": req.bundle,
         "assets": req.assets.as_ref().unwrap_or(&HashMap::new()),
         "config": req.config.as_deref().unwrap_or(""),
     });
 
+    let t0 = std::time::Instant::now();
     let resp = state
         .http
-        .post(format!("{}/api/apps/{}/deploy", node_url, app_id))
+        .post(&deploy_url)
         .json(&deploy_payload)
         .send()
         .await
-        .map_err(|e| AppError::Upstream(format!("node deploy failed: {}", e)))?;
+        .map_err(|e| {
+            let elapsed = t0.elapsed();
+            eprintln!(
+                "[deploy] ✗ node request failed after {:.1}s: {} (url={})",
+                elapsed.as_secs_f64(), e, deploy_url
+            );
+            AppError::Upstream(format!("node deploy failed: {}", e))
+        })?;
 
+    let elapsed = t0.elapsed();
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        eprintln!(
+            "[deploy] ✗ node returned {} after {:.1}s: {} (url={})",
+            status, elapsed.as_secs_f64(), body, deploy_url
+        );
         return Err(AppError::Upstream(format!(
             "node returned {} : {}",
             status, body
         )));
     }
+
+    eprintln!("[deploy] ✓ node responded 200 in {:.1}s", elapsed.as_secs_f64());
 
     // Update DB
     if created {

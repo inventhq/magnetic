@@ -37,6 +37,10 @@ impl IntoResponse for AppError {
             Self::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.as_str()),
             Self::Upstream(e) => (StatusCode::BAD_GATEWAY, e.as_str()),
         };
+        // Log all non-auth errors server-side for diagnostics
+        if !matches!(self, Self::Unauthorized) {
+            eprintln!("[api] {} → {}", status.as_u16(), msg);
+        }
         let body = serde_json::json!({ "error": msg });
         (status, axum::Json(body)).into_response()
     }
