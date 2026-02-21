@@ -54,6 +54,7 @@ where
         retries: u32,
         #[serde(default)]
         buffer: usize,
+        target: Option<String>,
     }
 
     match DataSourcesFormat::deserialize(deserializer) {
@@ -69,6 +70,7 @@ where
                 timeout: src.timeout,
                 retries: src.retries,
                 buffer: src.buffer,
+                target: src.target,
             }).collect())
         }
         Err(e) => Err(e),
@@ -126,6 +128,9 @@ pub struct DataSourceConfig {
     /// For SSE/WS sources: keep last N events as a JSON array. Default: 0 (replace mode).
     #[serde(default)]
     pub buffer: usize,
+    /// For delta mode: the data-key of the container element to insert into.
+    /// When set, SSE events are sent as lightweight deltas instead of full DOM snapshots.
+    pub target: Option<String>,
 }
 
 fn default_source_type() -> String { "fetch".into() }
@@ -482,9 +487,19 @@ pub fn start_poll_threads(
 /// If `source.buffer > 0`, events are accumulated in a JSON array (last N).
 /// If `source.buffer == 0` (default), each event replaces the previous value.
 /// Events with `event: lag` are skipped (server-side lag notifications).
+/// Delta event info passed to the on_sse_event callback.
+/// Contains everything the platform needs to send a lightweight delta to browsers.
+pub struct SseDelta {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub buffer_size: usize,
+    pub target: String,
+}
+
 pub fn start_sse_threads(
     ctx: Arc<DataContext>,
     on_change: Arc<dyn Fn() + Send + Sync>,
+    on_sse_event: Option<Arc<dyn Fn(SseDelta) + Send + Sync>>,
 ) {
     for source in &ctx.config.data {
         if source.source_type != "sse" {
@@ -494,6 +509,7 @@ pub fn start_sse_threads(
         let source = source.clone();
         let ctx = Arc::clone(&ctx);
         let on_change = Arc::clone(&on_change);
+        let on_sse_event = on_sse_event.as_ref().map(Arc::clone);
 
         thread::spawn(move || {
             let url = resolve_env_vars(&source.url);
@@ -547,19 +563,38 @@ pub fn start_sse_threads(
                                                 Err(_) => serde_json::Value::String(trimmed.to_string()),
                                             };
 
+                                            // Delta mode: if source has a target and on_sse_event
+                                            // is registered, send the raw event directly to browsers
+                                            // instead of re-rendering the entire page in V8.
+                                            let use_delta = on_sse_event.is_some()
+                                                && source.target.is_some()
+                                                && buffer_size > 0;
+
                                             if buffer_size > 0 {
                                                 // Buffer mode: accumulate in ring, store as array
                                                 if ring.len() >= buffer_size {
                                                     ring.pop_front();
                                                 }
-                                                ring.push_back(value);
+                                                ring.push_back(value.clone());
                                                 let arr = serde_json::Value::Array(ring.iter().cloned().collect());
                                                 ctx.set_value(&source.key, arr);
                                             } else {
                                                 // Replace mode: store latest value
-                                                ctx.set_value(&source.key, value);
+                                                ctx.set_value(&source.key, value.clone());
                                             }
-                                            on_change();
+
+                                            if use_delta {
+                                                // Delta path: bypass V8, send raw event to browser
+                                                on_sse_event.as_ref().unwrap()(SseDelta {
+                                                    key: source.key.clone(),
+                                                    value,
+                                                    buffer_size,
+                                                    target: source.target.clone().unwrap(),
+                                                });
+                                            } else {
+                                                // Snapshot path: full V8 re-render
+                                                on_change();
+                                            }
                                             data_buf.clear();
                                             event_type.clear();
                                         }

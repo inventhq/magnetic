@@ -14,6 +14,10 @@
 
   M.status = function() { return status; };
 
+  // --- Client-side renderers for delta mode (registered by app) ---
+  M._renderers = {};
+  M.registerRenderer = function(key, fn) { M._renderers[key] = fn; };
+
   // --- Connect to SSE + mount ---
   M.connect = function(url, mount) {
     root = typeof mount == "string" ? d.querySelector(mount) : mount;
@@ -36,6 +40,29 @@
         apply(JSON.parse(raw));
       } catch(e) { console.error("[magnetic] SSE error:", e); }
     };
+    // Delta events: raw data + client-side render (bypasses V8 entirely)
+    es.addEventListener("delta", function(ev) {
+      try {
+        var d2 = JSON.parse(ev.data);
+        var renderer = M._renderers[d2.k];
+        if (!renderer) return;
+        var node = renderer(d2.v);
+        if (!node) return;
+        // Find target container by key (from keys cache or DOM query)
+        var target = keys[d2.t] || root.querySelector('[data-key="' + d2.t + '"]');
+        if (!target) return;
+        // Register target in keys cache for future lookups
+        if (!keys[d2.t]) keys[d2.t] = target;
+        // Create DOM element and prepend (newest first)
+        var el = create(node);
+        target.insertBefore(el, target.firstChild);
+        // Evict oldest if over buffer limit
+        while (d2.max > 0 && target.children.length > d2.max) {
+          var last = target.lastElementChild;
+          if (last) { purgeKeys(last); target.removeChild(last); }
+        }
+      } catch(e) { console.error("[magnetic] delta error:", e); }
+    });
     es.onerror = function() {
       if (wasm) status = "offline";
     };

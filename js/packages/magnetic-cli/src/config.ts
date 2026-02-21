@@ -164,7 +164,7 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
       const explicitType = src.type as DataSourceType | undefined;
       const type = explicitType || parseRefreshToType(src.refresh);
 
-      result.data.push({
+      const entry: any = {
         key,
         url: src.url,
         type,
@@ -174,7 +174,9 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
         timeout: src.timeout,
         retries: src.retries || 0,
         buffer: src.buffer || 0,
-      });
+      };
+      if (src.target) entry.target = src.target;
+      result.data.push(entry);
     }
   }
 

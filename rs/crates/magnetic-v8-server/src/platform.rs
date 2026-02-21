@@ -24,12 +24,12 @@ use crate::{
     V8Request, V8Result, Reply, AssetManifest,
     MagneticContext, MiddlewareStack,
     v8_thread, v8_result_to_json, error_fallback,
-    write_sse_event, guess_content_type,
+    write_sse_event, write_sse_named, guess_content_type,
     format_extra_headers, status_text, urlencoding_decode,
     cors_middleware, rate_limit_middleware, logger_middleware,
     build_assets, find_arg, serve_embedded,
 };
-use crate::data::{DataContext, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, start_sse_threads, fetch_data_source};
+use crate::data::{DataContext, SseDelta, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, start_sse_threads, fetch_data_source};
 use crate::auth::AuthMiddleware;
 
 // ── Idle timeout for V8 parking ──────────────────────────────────────
@@ -183,11 +183,52 @@ fn start_data_threads(app: Arc<AppHandle>) {
         })
     };
 
+    // Delta callback: for SSE sources with `target`, send raw event data
+    // directly to browser clients — completely bypasses V8 rendering.
+    let on_sse_event: Arc<dyn Fn(SseDelta) + Send + Sync> = {
+        let app = Arc::clone(&app);
+        Arc::new(move |delta: SseDelta| {
+            let sessions: Vec<String> = {
+                let paths = app.session_paths.lock().unwrap();
+                paths.keys().cloned().collect()
+            };
+            if sessions.is_empty() {
+                return;
+            }
+
+            // Compact JSON: {"k":"events","v":{...},"max":20,"t":"feed"}
+            let msg = serde_json::json!({
+                "k": delta.key,
+                "v": delta.value,
+                "max": delta.buffer_size,
+                "t": delta.target,
+            });
+            let msg_bytes = msg.to_string();
+
+            let mut clients = app.sse_clients.lock().unwrap();
+            for session_id in &sessions {
+                if let Some(list) = clients.get_mut(session_id) {
+                    let mut alive = Vec::new();
+                    for mut client in list.drain(..) {
+                        if write_sse_named(&mut client, "delta", msg_bytes.as_bytes()).is_ok() {
+                            alive.push(client);
+                        }
+                    }
+                    if alive.is_empty() {
+                        clients.remove(session_id);
+                    } else {
+                        *list = alive;
+                    }
+                }
+            }
+        })
+    };
+
     if has_poll {
         start_poll_threads(Arc::clone(&ctx), Arc::clone(&on_change));
     }
     if has_sse {
-        start_sse_threads(Arc::clone(&ctx), on_change);
+        start_sse_threads(Arc::clone(&ctx), on_change, Some(on_sse_event));
     }
 }
 
@@ -1429,6 +1470,15 @@ fn handle_app_get(
     let magnetic_js = format!("{}/magnetic.js", prefix);
     let wasm_url = Some(format!("{}/transport.wasm", prefix));
 
+    // Load client-side renderer scripts for delta mode (if present)
+    let mut inline_scripts = Vec::new();
+    if app.data_ctx.is_some() {
+        let renderer_path = format!("{}/{}/public/renderer.js", app.data_dir, app_name);
+        if let Ok(script) = std::fs::read_to_string(&renderer_path) {
+            inline_scripts.push(script);
+        }
+    }
+
     let page = render_page(&PageOptions {
         root: dom,
         scripts: vec![magnetic_js],
@@ -1439,6 +1489,7 @@ fn handle_app_get(
         wasm_url,
         title: Some(format!("{} | Magnetic", app_name)),
         description: Some("Server-driven UI — Magnetic Platform".to_string()),
+        inline_scripts,
     });
 
     let eh = format_extra_headers(extra_headers);

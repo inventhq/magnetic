@@ -1218,6 +1218,7 @@ fn handle_get(
         wasm_url,
         title: Some("Magnetic Task Board".to_string()),
         description: Some("Server-driven UI — Rust + V8".to_string()),
+        inline_scripts: vec![],
     });
 
     let eh = format_extra_headers(extra_headers);
@@ -1311,6 +1312,16 @@ pub fn v8_result_to_json(result: V8Result, action: Option<&str>) -> String {
 
 pub fn write_sse_event(stream: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
     stream.write_all(b"event: message\ndata: ")?;
+    stream.write_all(data)?;
+    stream.write_all(b"\n\n")?;
+    stream.flush()
+}
+
+/// Write a named SSE event (e.g. "delta") to a browser client stream.
+pub fn write_sse_named(stream: &mut TcpStream, event: &str, data: &[u8]) -> std::io::Result<()> {
+    stream.write_all(b"event: ")?;
+    stream.write_all(event.as_bytes())?;
+    stream.write_all(b"\ndata: ")?;
     stream.write_all(data)?;
     stream.write_all(b"\n\n")?;
     stream.flush()

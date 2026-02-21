@@ -5,7 +5,8 @@
     "events": {
       "url": "https://sse.juicyapi.com/sse/events?key_prefix=6vct",
       "type": "sse",
-      "buffer": 20
+      "buffer": 20,
+      "target": "feed"
     }
   }
 }

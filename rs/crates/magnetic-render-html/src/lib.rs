@@ -70,6 +70,13 @@ pub fn render_page(opts: &PageOptions) -> String {
         html.push_str(&format!("<script src=\"{}\"></script>\n", escape_attr(src)));
     }
 
+    // Inline scripts (e.g. client-side renderers for delta mode)
+    for script in &opts.inline_scripts {
+        html.push_str("<script>\n");
+        html.push_str(script);
+        html.push_str("\n</script>\n");
+    }
+
     // Magnetic client bootstrap
     if let Some(sse_url) = &opts.sse_url {
         html.push_str("<script>\n");
@@ -95,6 +102,9 @@ pub struct PageOptions {
     pub wasm_url: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
+    /// Inline script blocks injected after external scripts but before SSE bootstrap.
+    /// Used for registering client-side renderers for delta mode.
+    pub inline_scripts: Vec<String>,
 }
 
 fn write_node(node: &DomNode, buf: &mut String) {
