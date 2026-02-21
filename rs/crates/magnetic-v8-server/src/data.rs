@@ -583,17 +583,21 @@ pub fn start_sse_threads(
                                                 ctx.set_value(&source.key, value.clone());
                                             }
 
+                                            // Always notify on_change (debounced V8 re-render).
+                                            // This keeps V8 state fresh for new connections.
+                                            on_change();
+
+                                            // Also send immediate delta if available.
+                                            // Arrives before the debounced snapshot — gives
+                                            // instant visual feedback. Keyed reconciliation
+                                            // in the browser handles the overlap correctly.
                                             if use_delta {
-                                                // Delta path: bypass V8, send raw event to browser
                                                 on_sse_event.as_ref().unwrap()(SseDelta {
                                                     key: source.key.clone(),
                                                     value,
                                                     buffer_size,
                                                     target: source.target.clone().unwrap(),
                                                 });
-                                            } else {
-                                                // Snapshot path: full V8 re-render
-                                                on_change();
                                             }
                                             data_buf.clear();
                                             event_type.clear();

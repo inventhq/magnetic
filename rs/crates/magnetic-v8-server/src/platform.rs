@@ -207,8 +207,6 @@ fn start_data_threads(app: Arc<AppHandle>) {
             if clients.is_empty() {
                 return;
             }
-            let n_clients: usize = clients.values().map(|v| v.len()).sum();
-            eprintln!("[delta] → {} client(s)", n_clients);
             let session_ids: Vec<String> = clients.keys().cloned().collect();
             for session_id in &session_ids {
                 if let Some(list) = clients.get_mut(session_id) {
@@ -1020,24 +1018,8 @@ fn handle_app_sse(
 
     let path = app.session_paths.lock().unwrap()
         .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
-
-    // Inject fresh data from DataContext before rendering the initial snapshot.
-    // In delta mode, on_sse_event bypasses V8, so V8's data can be stale.
-    let data_json = app.data_ctx.as_ref()
-        .map(|ctx| ctx.data_json_for_page(&path));
-
     let reply = Reply::new();
-    let req = if let Some(dj) = data_json {
-        V8Request::RenderWithData {
-            path: path.clone(),
-            session_id: session_id.clone(),
-            data_json: dj,
-            reply: reply.clone(),
-        }
-    } else {
-        V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }
-    };
-    if tx.send(req).is_err() {
+    if tx.send(V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }).is_err() {
         return stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
     }
     let dom_json = v8_result_to_json(reply.recv(), None);
