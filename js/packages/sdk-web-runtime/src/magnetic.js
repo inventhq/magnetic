@@ -25,44 +25,39 @@
     es.onmessage = function(ev) {
       try {
         var raw = ev.data;
-        // WASM transport: store snapshot, dedup + prediction confirm
+        var parsed = JSON.parse(raw);
+        // Delta mode: raw event data + client-side render (bypasses V8)
+        if (parsed.delta) {
+          var renderer = M._renderers[parsed.k];
+          if (!renderer) return;
+          var node = renderer(parsed.v);
+          if (!node) return;
+          var target = keys[parsed.t] || root.querySelector('[data-key="' + parsed.t + '"]');
+          if (!target) return;
+          if (!keys[parsed.t]) keys[parsed.t] = target;
+          var el = create(node);
+          target.insertBefore(el, target.firstChild);
+          while (parsed.max > 0 && target.children.length > parsed.max) {
+            var last = target.lastElementChild;
+            if (last) { purgeKeys(last); target.removeChild(last); }
+          }
+          return;
+        }
+        // Full snapshot mode: WASM dedup + apply
         if (wasm && wasm.store) {
           var bytes = enc.encode(raw);
           if (bytes.length <= 16384) {
             new Uint8Array(wasm.memory.buffer).set(bytes, wasm.input_ptr());
-            if (wasm.store(bytes.length) === 0) return; // dedup or prediction matched
+            if (wasm.store(bytes.length) === 0) return;
           }
         } else {
           var h = fnv(raw);
           if (h === lastHash) return;
           lastHash = h;
         }
-        apply(JSON.parse(raw));
+        apply(parsed);
       } catch(e) { console.error("[magnetic] SSE error:", e); }
     };
-    // Delta events: raw data + client-side render (bypasses V8 entirely)
-    es.addEventListener("delta", function(ev) {
-      try {
-        var d2 = JSON.parse(ev.data);
-        var renderer = M._renderers[d2.k];
-        if (!renderer) return;
-        var node = renderer(d2.v);
-        if (!node) return;
-        // Find target container by key (from keys cache or DOM query)
-        var target = keys[d2.t] || root.querySelector('[data-key="' + d2.t + '"]');
-        if (!target) return;
-        // Register target in keys cache for future lookups
-        if (!keys[d2.t]) keys[d2.t] = target;
-        // Create DOM element and prepend (newest first)
-        var el = create(node);
-        target.insertBefore(el, target.firstChild);
-        // Evict oldest if over buffer limit
-        while (d2.max > 0 && target.children.length > d2.max) {
-          var last = target.lastElementChild;
-          if (last) { purgeKeys(last); target.removeChild(last); }
-        }
-      } catch(e) { console.error("[magnetic] delta error:", e); }
-    });
     es.onerror = function() {
       if (wasm) status = "offline";
     };

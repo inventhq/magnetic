@@ -1,6 +1,8 @@
 // Client-side renderer for delta mode — renders event cards in the browser
 // without V8 re-rendering. ~600 bytes minified.
-Magnetic.registerRenderer("events", function(ev) {
+Magnetic.registerRenderer("events", function(raw) {
+  // Handle both flat events and events wrapped in a `data` field (matches server-side EventCard)
+  var ev = raw.data && typeof raw.data === "object" ? raw.data : raw;
   var p = ev.params || {};
   var et = ev.event_type || ev.type || "unknown";
   var c = p.carrier || "";

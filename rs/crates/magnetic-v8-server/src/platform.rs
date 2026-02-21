@@ -193,24 +193,28 @@ fn start_data_threads(app: Arc<AppHandle>) {
                 paths.keys().cloned().collect()
             };
             if sessions.is_empty() {
+                eprintln!("[delta] no sessions, skipping delta for '{}'", delta.key);
                 return;
             }
 
-            // Compact JSON: {"k":"events","v":{...},"max":20,"t":"feed"}
+            // Delta message sent as regular "message" event with delta flag.
+            // Format: {"delta":true,"k":"events","v":{...},"max":20,"t":"feed"}
             let msg = serde_json::json!({
+                "delta": true,
                 "k": delta.key,
                 "v": delta.value,
                 "max": delta.buffer_size,
                 "t": delta.target,
             });
             let msg_bytes = msg.to_string();
+            eprintln!("[delta] sending to {} sessions: {}", sessions.len(), &msg_bytes[..std::cmp::min(200, msg_bytes.len())]);
 
             let mut clients = app.sse_clients.lock().unwrap();
             for session_id in &sessions {
                 if let Some(list) = clients.get_mut(session_id) {
                     let mut alive = Vec::new();
                     for mut client in list.drain(..) {
-                        if write_sse_named(&mut client, "delta", msg_bytes.as_bytes()).is_ok() {
+                        if write_sse_event(&mut client, msg_bytes.as_bytes()).is_ok() {
                             alive.push(client);
                         }
                     }
@@ -1016,8 +1020,24 @@ fn handle_app_sse(
 
     let path = app.session_paths.lock().unwrap()
         .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
+
+    // Inject fresh data from DataContext before rendering the initial snapshot.
+    // In delta mode, on_sse_event bypasses V8, so V8's data can be stale.
+    let data_json = app.data_ctx.as_ref()
+        .map(|ctx| ctx.data_json_for_page(&path));
+
     let reply = Reply::new();
-    if tx.send(V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }).is_err() {
+    let req = if let Some(dj) = data_json {
+        V8Request::RenderWithData {
+            path: path.clone(),
+            session_id: session_id.clone(),
+            data_json: dj,
+            reply: reply.clone(),
+        }
+    } else {
+        V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }
+    };
+    if tx.send(req).is_err() {
         return stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
     }
     let dom_json = v8_result_to_json(reply.recv(), None);
