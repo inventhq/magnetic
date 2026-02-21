@@ -327,18 +327,19 @@ async function main() {
       if (apiKey) {
         // Authenticated: deploy via control plane
         log('info', `Deploying to ${serverUrl} (authenticated)...`);
+        const deployBody = Buffer.from(JSON.stringify({
+          name: appName,
+          bundle: bundleContent,
+          assets: deploy.assets,
+          config: serverConfig,
+        }));
         const resp = await fetch(`${serverUrl}/api/deploy`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
           },
-          body: JSON.stringify({
-            name: appName,
-            bundle: bundleContent,
-            assets: deploy.assets,
-            config: serverConfig,
-          }),
+          body: deployBody,
         });
 
         if (resp.ok) {
@@ -354,14 +355,17 @@ async function main() {
       } else {
         // No auth: direct push to node (backward-compatible with --platform servers)
         log('info', `Pushing to ${serverUrl}/api/apps/${appName}/deploy...`);
+        const directBody = Buffer.from(JSON.stringify({
+          bundle: bundleContent,
+          assets: deploy.assets,
+          config: serverConfig,
+        }));
         const resp = await fetch(`${serverUrl}/api/apps/${appName}/deploy`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bundle: bundleContent,
-            assets: deploy.assets,
-            config: serverConfig,
-          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: directBody,
         });
 
         if (resp.ok) {

@@ -55,9 +55,9 @@ pub fn tier_limits(tier: &str) -> TierLimits {
             max_requests_month: 1_000_000,
         },
         _ => TierLimits {
-            max_apps: 3,
-            max_sse_clients: 5,
-            max_requests_month: 10_000,
+            max_apps: 100,
+            max_sse_clients: 50,
+            max_requests_month: 100_000,
         },
     }
 }
