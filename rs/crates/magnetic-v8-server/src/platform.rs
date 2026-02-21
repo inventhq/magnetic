@@ -1018,8 +1018,24 @@ fn handle_app_sse(
 
     let path = app.session_paths.lock().unwrap()
         .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
+
+    // Inject fresh data from DataContext before rendering the initial snapshot.
+    // Delta mode skips on_change() so V8 state may be stale — RenderWithData
+    // ensures new connections always see current data.
+    let data_json = app.data_ctx.as_ref()
+        .map(|ctx| ctx.data_json_for_page(&path));
     let reply = Reply::new();
-    if tx.send(V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }).is_err() {
+    let req = if let Some(dj) = data_json {
+        V8Request::RenderWithData {
+            path: path.clone(),
+            session_id: session_id.clone(),
+            data_json: dj,
+            reply: reply.clone(),
+        }
+    } else {
+        V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }
+    };
+    if tx.send(req).is_err() {
         return stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
     }
     let dom_json = v8_result_to_json(reply.recv(), None);

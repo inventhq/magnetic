@@ -583,21 +583,22 @@ pub fn start_sse_threads(
                                                 ctx.set_value(&source.key, value.clone());
                                             }
 
-                                            // Always notify on_change (debounced V8 re-render).
-                                            // This keeps V8 state fresh for new connections.
-                                            on_change();
-
-                                            // Also send immediate delta if available.
-                                            // Arrives before the debounced snapshot — gives
-                                            // instant visual feedback. Keyed reconciliation
-                                            // in the browser handles the overlap correctly.
                                             if use_delta {
+                                                // Delta path: send raw event directly to browsers.
+                                                // Do NOT call on_change() — the debounced snapshot
+                                                // replaces the entire DOM every ~150ms, fighting
+                                                // with the delta insertions. DataContext is already
+                                                // updated above, so new connections get fresh data
+                                                // via RenderWithData.
                                                 on_sse_event.as_ref().unwrap()(SseDelta {
                                                     key: source.key.clone(),
                                                     value,
                                                     buffer_size,
                                                     target: source.target.clone().unwrap(),
                                                 });
+                                            } else {
+                                                // Snapshot path: full V8 re-render (debounced)
+                                                on_change();
                                             }
                                             data_buf.clear();
                                             event_type.clear();
