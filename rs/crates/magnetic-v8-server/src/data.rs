@@ -67,6 +67,9 @@ pub struct DataSourceConfig {
     /// SSR timeout: if fetch takes longer, render without this data.
     /// Format: "100ms", "1s". Default: no timeout (blocking).
     pub timeout: Option<String>,
+    /// Number of retry attempts on fetch failure. Default: 0 (no retries).
+    #[serde(default)]
+    pub retries: u32,
 }
 
 fn default_source_type() -> String { "fetch".into() }
@@ -183,27 +186,45 @@ pub fn interpolate_url(template: &str, payload: &serde_json::Value) -> String {
 
 /// Fetch a single data source. Returns the parsed JSON value.
 /// If the source has `auth: true` and a token is provided, it's sent as Bearer.
+/// Retries up to `source.retries` times with exponential backoff (200ms, 400ms, 800ms...).
 pub fn fetch_data_source(source: &DataSourceConfig, auth_token: Option<&str>) -> Result<serde_json::Value, String> {
     let url = resolve_env_vars(&source.url);
-    eprintln!("[data] fetching '{}' from {}", source.key, url);
+    let max_attempts = 1 + source.retries; // 0 retries = 1 attempt
+    let mut last_err = String::new();
 
-    let mut req = ureq::get(&url)
-        .set("Accept", "application/json");
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            let backoff = Duration::from_millis(200 * (1 << (attempt - 1).min(4)));
+            eprintln!("[data] retrying '{}' (attempt {}/{}, backoff {:?})", source.key, attempt + 1, max_attempts, backoff);
+            thread::sleep(backoff);
+        } else {
+            eprintln!("[data] fetching '{}' from {}", source.key, url);
+        }
 
-    if source.auth {
-        if let Some(token) = auth_token {
-            req = req.set("Authorization", &format!("Bearer {}", token));
+        let mut req = ureq::get(&url)
+            .set("Accept", "application/json");
+
+        if source.auth {
+            if let Some(token) = auth_token {
+                req = req.set("Authorization", &format!("Bearer {}", token));
+            }
+        }
+
+        match req.call() {
+            Ok(resp) => {
+                match resp.into_string() {
+                    Ok(body) => {
+                        return serde_json::from_str(&body)
+                            .map_err(|e| format!("parse '{}': {}", source.key, e));
+                    }
+                    Err(e) => { last_err = format!("read '{}': {}", source.key, e); }
+                }
+            }
+            Err(e) => { last_err = format!("fetch '{}': {}", source.key, e); }
         }
     }
 
-    let resp = req.call()
-        .map_err(|e| format!("fetch '{}': {}", source.key, e))?;
-
-    let body = resp.into_string()
-        .map_err(|e| format!("read '{}': {}", source.key, e))?;
-
-    serde_json::from_str(&body)
-        .map_err(|e| format!("parse '{}': {}", source.key, e))
+    Err(last_err)
 }
 
 /// Fetch all data sources matching a page scope.
@@ -387,6 +408,121 @@ pub fn start_poll_threads(
                     }
                     Err(e) => eprintln!("[data] poll error: {}", e),
                 }
+            }
+        });
+    }
+}
+
+/// Start background SSE client threads for data sources with type "sse".
+/// Each thread opens a persistent connection, parses text/event-stream frames,
+/// updates the DataContext, and calls on_change() when new data arrives.
+/// Auto-reconnects on disconnect with exponential backoff (1s → 30s cap).
+pub fn start_sse_threads(
+    ctx: Arc<DataContext>,
+    on_change: Arc<dyn Fn() + Send + Sync>,
+) {
+    for source in &ctx.config.data {
+        if source.source_type != "sse" {
+            continue;
+        }
+
+        let source = source.clone();
+        let ctx = Arc::clone(&ctx);
+        let on_change = Arc::clone(&on_change);
+
+        thread::spawn(move || {
+            let url = resolve_env_vars(&source.url);
+            let mut backoff_ms: u64 = 1000;
+            let mut last_event_id = String::new();
+
+            loop {
+                eprintln!("[data:sse] connecting '{}' → {}", source.key, url);
+
+                let mut req = ureq::get(&url)
+                    .set("Accept", "text/event-stream")
+                    .set("Cache-Control", "no-cache");
+
+                if !last_event_id.is_empty() {
+                    req = req.set("Last-Event-ID", &last_event_id);
+                }
+
+                match req.call() {
+                    Ok(resp) => {
+                        backoff_ms = 1000; // reset on successful connect
+                        eprintln!("[data:sse] connected '{}'", source.key);
+
+                        let reader = resp.into_reader();
+                        let buf = std::io::BufReader::new(reader);
+                        use std::io::BufRead;
+
+                        let mut data_buf = String::new();
+                        let mut event_type = String::new();
+
+                        for line_result in buf.lines() {
+                            match line_result {
+                                Ok(line) => {
+                                    if line.is_empty() {
+                                        // Empty line = end of event, dispatch
+                                        if !data_buf.is_empty() {
+                                            let trimmed = data_buf.trim_end_matches('\n');
+                                            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                                                Ok(value) => {
+                                                    let old = ctx.values.read().unwrap().get(&source.key).cloned();
+                                                    let changed = old.as_ref() != Some(&value);
+                                                    ctx.set_value(&source.key, value);
+                                                    if changed {
+                                                        on_change();
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    // Not JSON — store as raw string value
+                                                    let old = ctx.values.read().unwrap().get(&source.key).cloned();
+                                                    let value = serde_json::Value::String(trimmed.to_string());
+                                                    let changed = old.as_ref() != Some(&value);
+                                                    ctx.set_value(&source.key, value);
+                                                    if changed {
+                                                        on_change();
+                                                    }
+                                                }
+                                            }
+                                            data_buf.clear();
+                                            event_type.clear();
+                                        }
+                                    } else if let Some(rest) = line.strip_prefix("data:") {
+                                        let rest = rest.strip_prefix(' ').unwrap_or(rest);
+                                        if !data_buf.is_empty() {
+                                            data_buf.push('\n');
+                                        }
+                                        data_buf.push_str(rest);
+                                    } else if let Some(rest) = line.strip_prefix("id:") {
+                                        last_event_id = rest.strip_prefix(' ').unwrap_or(rest).to_string();
+                                    } else if let Some(rest) = line.strip_prefix("event:") {
+                                        event_type = rest.strip_prefix(' ').unwrap_or(rest).to_string();
+                                    } else if line.starts_with(':') {
+                                        // Comment / keepalive — ignore
+                                    } else if let Some(rest) = line.strip_prefix("retry:") {
+                                        if let Ok(ms) = rest.trim().parse::<u64>() {
+                                            backoff_ms = ms.max(500).min(30000);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("[data:sse] read error '{}': {}", source.key, e);
+                                    break;
+                                }
+                            }
+                        }
+                        eprintln!("[data:sse] disconnected '{}'", source.key);
+                    }
+                    Err(e) => {
+                        eprintln!("[data:sse] connect error '{}': {}", source.key, e);
+                    }
+                }
+
+                // Reconnect with backoff
+                eprintln!("[data:sse] reconnecting '{}' in {}ms", source.key, backoff_ms);
+                thread::sleep(Duration::from_millis(backoff_ms));
+                backoff_ms = (backoff_ms * 2).min(30000);
             }
         });
     }

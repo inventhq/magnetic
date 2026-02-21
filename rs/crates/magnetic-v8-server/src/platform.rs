@@ -29,7 +29,7 @@ use crate::{
     cors_middleware, rate_limit_middleware, logger_middleware,
     build_assets, find_arg, serve_embedded,
 };
-use crate::data::{DataContext, DataLayerConfig, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, fetch_data_source};
+use crate::data::{DataContext, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, start_sse_threads, fetch_data_source};
 use crate::auth::AuthMiddleware;
 
 // ── Idle timeout for V8 parking ──────────────────────────────────────
@@ -44,8 +44,10 @@ struct AppHandle {
     v8_tx: Mutex<Option<mpsc::Sender<V8Request>>>,
     parked: AtomicBool,
     last_activity: Mutex<Instant>,
-    sse_clients: Mutex<Vec<TcpStream>>,
-    current_path: Mutex<String>,
+    /// Per-session SSE clients: session_id → list of TcpStream clones
+    sse_clients: Mutex<HashMap<String, Vec<TcpStream>>>,
+    /// Per-session current path: session_id → path
+    session_paths: Mutex<HashMap<String, String>>,
     static_dir: String,
     asset_dir: String,
     inline_css: Option<String>,
@@ -91,11 +93,83 @@ impl AppHandle {
     }
 
     fn sse_client_count(&self) -> usize {
-        self.sse_clients.lock().unwrap().len()
+        self.sse_clients.lock().unwrap().values().map(|v| v.len()).sum()
     }
 
     fn idle_secs(&self) -> u64 {
         self.last_activity.lock().unwrap().elapsed().as_secs()
+    }
+}
+
+/// Start background data threads (poll + SSE) for an app.
+/// The on_change callback re-renders for all active sessions and pushes via SSE.
+fn start_data_threads(app: Arc<AppHandle>) {
+    let ctx = match app.data_ctx {
+        Some(ref ctx) => Arc::clone(ctx),
+        None => return,
+    };
+
+    let has_poll = ctx.config.data.iter().any(|d| d.source_type == "poll");
+    let has_sse = ctx.config.data.iter().any(|d| d.source_type == "sse");
+    if !has_poll && !has_sse {
+        return;
+    }
+
+    let on_change: Arc<dyn Fn() + Send + Sync> = {
+        let app = Arc::clone(&app);
+        Arc::new(move || {
+            // Re-render for each active session and push SSE updates
+            let sessions: Vec<(String, String)> = {
+                let paths = app.session_paths.lock().unwrap();
+                paths.iter().map(|(sid, p)| (sid.clone(), p.clone())).collect()
+            };
+            if sessions.is_empty() {
+                return;
+            }
+            let tx = match app.ensure_warm() {
+                Ok(tx) => tx,
+                Err(_) => return,
+            };
+            let ctx = match app.data_ctx {
+                Some(ref ctx) => ctx,
+                None => return,
+            };
+            for (session_id, path) in &sessions {
+                let data_json = ctx.data_json_for_page(path);
+                let reply = Reply::new();
+                if tx.send(V8Request::RenderWithData {
+                    path: path.clone(),
+                    session_id: session_id.clone(),
+                    data_json,
+                    reply: reply.clone(),
+                }).is_err() {
+                    continue;
+                }
+                let dom_json = v8_result_to_json(reply.recv(), None);
+                let snapshot = format!("{{\"root\":{}}}", dom_json);
+                let mut clients = app.sse_clients.lock().unwrap();
+                if let Some(list) = clients.get_mut(session_id) {
+                    let mut alive = Vec::new();
+                    for mut client in list.drain(..) {
+                        if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
+                            alive.push(client);
+                        }
+                    }
+                    if alive.is_empty() {
+                        clients.remove(session_id);
+                    } else {
+                        *list = alive;
+                    }
+                }
+            }
+        })
+    };
+
+    if has_poll {
+        start_poll_threads(Arc::clone(&ctx), Arc::clone(&on_change));
+    }
+    if has_sse {
+        start_sse_threads(Arc::clone(&ctx), on_change);
     }
 }
 
@@ -151,7 +225,9 @@ pub fn run_platform(args: &[String]) {
                     match load_app(&name, &data_dir) {
                         Ok(handle) => {
                             eprintln!("[platform] Loaded app: {}", name);
-                            platform.apps.write().unwrap().insert(name, Arc::new(handle));
+                            let app = Arc::new(handle);
+                            start_data_threads(Arc::clone(&app));
+                            platform.apps.write().unwrap().insert(name, app);
                         }
                         Err(e) => eprintln!("[platform] Failed to load {}: {}", name, e),
                     }
@@ -265,8 +341,8 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
         v8_tx: Mutex::new(Some(tx)),
         parked: AtomicBool::new(false),
         last_activity: Mutex::new(Instant::now()),
-        sse_clients: Mutex::new(Vec::new()),
-        current_path: Mutex::new("/".to_string()),
+        sse_clients: Mutex::new(HashMap::new()),
+        session_paths: Mutex::new(HashMap::new()),
         static_dir: public_dir,
         asset_dir,
         inline_css,
@@ -791,9 +867,11 @@ fn handle_deploy(
     // Load (or reload) the app
     match load_app(&name, &platform.data_dir) {
         Ok(handle) => {
+            let app = Arc::new(handle);
+            start_data_threads(Arc::clone(&app));
             let mut apps = platform.apps.write().unwrap();
             // Old app handle is dropped, V8 thread will exit when channel closes
-            apps.insert(name.clone(), Arc::new(handle));
+            apps.insert(name.clone(), app);
             drop(apps);
 
             let msg = format!(
@@ -829,12 +907,20 @@ fn handle_app_sse(
     mut stream: TcpStream,
     app: &AppHandle,
     extra_headers: &HashMap<String, String>,
-    _req_headers: &HashMap<String, String>,
+    req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
+    use crate::{extract_session_cookie, generate_session_id};
+
+    // Get or create session ID from cookie
+    let session_id = extract_session_cookie(req_headers)
+        .unwrap_or_else(generate_session_id);
+
     let eh = format_extra_headers(extra_headers);
     let header = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
-        Cache-Control: no-cache\r\nConnection: keep-alive\r\n{}\r\n", eh
+        Cache-Control: no-cache\r\nConnection: keep-alive\r\n\
+        Set-Cookie: magnetic_sid={}; Path=/; HttpOnly; SameSite=Lax\r\n{}\r\n",
+        session_id, eh
     );
     stream.write_all(header.as_bytes())?;
 
@@ -843,9 +929,10 @@ fn handle_app_sse(
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
 
-    let path = app.current_path.lock().unwrap().clone();
+    let path = app.session_paths.lock().unwrap()
+        .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
     let reply = Reply::new();
-    if tx.send(V8Request::Render { path, reply: reply.clone() }).is_err() {
+    if tx.send(V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }).is_err() {
         return stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
     }
     let dom_json = v8_result_to_json(reply.recv(), None);
@@ -853,11 +940,31 @@ fn handle_app_sse(
     write_sse_event(&mut stream, snapshot.as_bytes())?;
 
     let client = stream.try_clone()?;
-    app.sse_clients.lock().unwrap().push(client);
+    {
+        let mut clients = app.sse_clients.lock().unwrap();
+        clients.entry(session_id.clone()).or_insert_with(Vec::new).push(client);
+    }
+    eprintln!("[platform:{}] SSE connected (session={}, path={})", app.name, &session_id[..8], path);
 
     loop {
         thread::sleep(std::time::Duration::from_secs(30));
-        if stream.write_all(b": keepalive\n\n").is_err() { break; }
+        if stream.write_all(b": keepalive\n\n").is_err() {
+            eprintln!("[platform:{}] SSE disconnected (session={})", app.name, &session_id[..8]);
+            // Clean up this client
+            let mut clients = app.sse_clients.lock().unwrap();
+            if let Some(list) = clients.get_mut(&session_id) {
+                list.retain(|mut c| c.write_all(b"").is_ok());
+                if list.is_empty() {
+                    clients.remove(&session_id);
+                    // Drop session state in V8
+                    if let Ok(tx) = app.ensure_warm() {
+                        let _ = tx.send(V8Request::DropSession { session_id: session_id.clone() });
+                    }
+                    app.session_paths.lock().unwrap().remove(&session_id);
+                }
+            }
+            break;
+        }
     }
     Ok(())
 }
@@ -870,8 +977,14 @@ fn handle_app_action(
     extra_headers: &HashMap<String, String>,
     req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
+    use crate::{extract_session_cookie};
+
     let action = urlencoding_decode(url_path.strip_prefix("/actions/").unwrap_or(""));
     let body_str = String::from_utf8_lossy(body);
+
+    // Session ID from cookie (fall back to __default for cookieless requests)
+    let session_id = extract_session_cookie(req_headers)
+        .unwrap_or_else(|| "__default".to_string());
 
     let payload_str = if body_str.is_empty() { "{}".to_string() } else {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body_str) {
@@ -896,7 +1009,8 @@ fn handle_app_action(
             .and_then(|v| v.get("path")?.as_str().map(String::from))
             .unwrap_or_else(|| "/".to_string());
 
-        *app.current_path.lock().unwrap() = nav_path.clone();
+        eprintln!("[platform:{}] navigate → {} (session={})", app.name, nav_path, &session_id[..std::cmp::min(8, session_id.len())]);
+        app.session_paths.lock().unwrap().insert(session_id.clone(), nav_path.clone());
 
         // On navigation, fetch page-scoped data sources for the new page
         if let Some(ref ctx) = app.data_ctx {
@@ -904,7 +1018,7 @@ fn handle_app_action(
             let data_json = ctx.data_json_for_page(&nav_path);
             let reply = Reply::new();
             if tx.send(V8Request::RenderWithData {
-                path: nav_path, data_json, reply: reply.clone(),
+                path: nav_path, data_json, session_id: session_id.clone(), reply: reply.clone(),
             }).is_err() {
                 let msg = "{\"error\":\"V8 thread unavailable\"}";
                 let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
@@ -915,7 +1029,7 @@ fn handle_app_action(
             snapshot = format!("{{\"root\":{}}}", dom_json);
         } else {
             let reply = Reply::new();
-            if tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).is_err() {
+            if tx.send(V8Request::Render { path: nav_path, session_id: session_id.clone(), reply: reply.clone() }).is_err() {
                 let msg = "{\"error\":\"V8 thread unavailable\"}";
                 let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
                 stream.write_all(resp.as_bytes())?;
@@ -925,7 +1039,8 @@ fn handle_app_action(
             snapshot = format!("{{\"root\":{}}}", dom_json);
         }
     } else {
-        let path = app.current_path.lock().unwrap().clone();
+        let path = app.session_paths.lock().unwrap()
+            .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
         let payload_val: serde_json::Value = serde_json::from_str(&payload_str).unwrap_or_default();
 
         // Check if this action maps to an external API
@@ -953,7 +1068,7 @@ fn handle_app_action(
                 let data_json = ctx.data_json_for_page(&path);
                 let reply = Reply::new();
                 if tx.send(V8Request::RenderWithData {
-                    path: path.clone(), data_json, reply: reply.clone(),
+                    path: path.clone(), data_json, session_id: session_id.clone(), reply: reply.clone(),
                 }).is_err() {
                     let msg = "{\"error\":\"V8 thread unavailable\"}";
                     let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
@@ -966,7 +1081,7 @@ fn handle_app_action(
                 // Not an external action — fall through to local reducer
                 let reply = Reply::new();
                 if tx.send(V8Request::Reduce {
-                    action: action.clone(), payload: payload_str, path, reply: reply.clone(),
+                    action: action.clone(), payload: payload_str, path, session_id: session_id.clone(), reply: reply.clone(),
                 }).is_err() {
                     let msg = "{\"error\":\"V8 thread unavailable\"}";
                     let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
@@ -980,7 +1095,7 @@ fn handle_app_action(
             // No data layer — standard reducer path
             let reply = Reply::new();
             if tx.send(V8Request::Reduce {
-                action: action.clone(), payload: payload_str, path, reply: reply.clone(),
+                action: action.clone(), payload: payload_str, path, session_id: session_id.clone(), reply: reply.clone(),
             }).is_err() {
                 let msg = "{\"error\":\"V8 thread unavailable\"}";
                 let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", msg.len());
@@ -1001,15 +1116,22 @@ fn handle_app_action(
     stream.write_all(resp.as_bytes())?;
     stream.write_all(snapshot.as_bytes())?;
 
+    // Broadcast only to this session's SSE clients (not all users)
     if action != "navigate" {
         let mut clients = app.sse_clients.lock().unwrap();
-        let mut alive = Vec::new();
-        for mut client in clients.drain(..) {
-            if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
-                alive.push(client);
+        if let Some(list) = clients.get_mut(&session_id) {
+            let mut alive = Vec::new();
+            for mut client in list.drain(..) {
+                if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
+                    alive.push(client);
+                }
+            }
+            if alive.is_empty() {
+                clients.remove(&session_id);
+            } else {
+                *list = alive;
             }
         }
-        *clients = alive;
     }
     Ok(())
 }
@@ -1133,7 +1255,11 @@ fn handle_app_get(
     })?;
 
     let route_path = path.split('?').next().unwrap_or("/");
-    *app.current_path.lock().unwrap() = route_path.to_string();
+    let (session_id, is_new) = match crate::extract_session_cookie(req_headers) {
+        Some(sid) => (sid, false),
+        None => (crate::generate_session_id(), true),
+    };
+    app.session_paths.lock().unwrap().insert(session_id.clone(), route_path.to_string());
 
     // Extract auth token from session (if auth middleware configured)
     let auth_token = app.auth.as_ref()
@@ -1148,7 +1274,7 @@ fn handle_app_get(
         pending_sources = fetch_page_data_streaming(ctx, route_path, auth_token.as_deref());
         let data_json = ctx.data_json_for_page(route_path);
         if tx.send(V8Request::RenderWithDataAndCSS {
-            path: route_path.to_string(), data_json, reply: reply.clone(),
+            path: route_path.to_string(), data_json, session_id: session_id.clone(), reply: reply.clone(),
         }).is_err() {
             let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
             let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n", msg.len());
@@ -1157,7 +1283,7 @@ fn handle_app_get(
         }
     } else {
         if tx.send(V8Request::RenderWithCSS {
-            path: route_path.to_string(), reply: reply.clone(),
+            path: route_path.to_string(), session_id: session_id.clone(), reply: reply.clone(),
         }).is_err() {
             let msg = "<html><body><h1>503 — V8 thread unavailable</h1></body></html>";
             let resp = format!("HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n", msg.len());
@@ -1171,6 +1297,7 @@ fn handle_app_get(
         let deferred_app = Arc::clone(&app);
         let route = route_path.to_string();
         let token = auth_token.clone();
+        let deferred_sid = session_id.clone();
         thread::spawn(move || {
             if let Some(ref ctx) = deferred_app.data_ctx {
                 for source in &pending_sources {
@@ -1189,19 +1316,23 @@ fn handle_app_get(
                     let data_json = ctx.data_json_for_page(&route);
                     let reply = Reply::new();
                     if tx.send(V8Request::RenderWithData {
-                        path: route, data_json, reply: reply.clone(),
+                        path: route, data_json, session_id: deferred_sid.clone(), reply: reply.clone(),
                     }).is_ok() {
                         let dom_json = v8_result_to_json(reply.recv(), None);
                         let snapshot = format!("{{\"root\":{}}}", dom_json);
+                        // Push SSE update to the session that triggered this render
                         let mut clients = deferred_app.sse_clients.lock().unwrap();
-                        let mut alive = Vec::new();
-                        for mut client in clients.drain(..) {
-                            if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
-                                alive.push(client);
+                        if let Some(list) = clients.get_mut(&deferred_sid) {
+                            let mut alive = Vec::new();
+                            for mut client in list.drain(..) {
+                                if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
+                                    alive.push(client);
+                                }
                             }
+                            if alive.is_empty() { clients.remove(&deferred_sid); }
+                            else { *list = alive; }
                         }
-                        *clients = alive;
-                        eprintln!("[data] deferred data ready, pushed SSE update");
+                        eprintln!("[data] deferred data ready, pushed SSE update (session={})", &deferred_sid[..8]);
                     }
                 }
             }
@@ -1267,10 +1398,15 @@ fn handle_app_get(
     });
 
     let eh = format_extra_headers(extra_headers);
+    let cookie_header = if is_new {
+        format!("Set-Cookie: magnetic_sid={}; Path=/; HttpOnly; SameSite=Lax\r\n", session_id)
+    } else {
+        String::new()
+    };
     let resp = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\
-        Content-Length: {}\r\n{}\r\n",
-        page.len(), eh
+        Content-Length: {}\r\n{}{}\r\n",
+        page.len(), cookie_header, eh
     );
     stream.write_all(resp.as_bytes())?;
     stream.write_all(page.as_bytes())

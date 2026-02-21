@@ -274,9 +274,24 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
     lines.push(`var __actionNames = ${JSON.stringify(config.actions.map(a => a.name))};`);
   }
 
-  // State + render/reduce
+  // Per-session state management
   lines.push('');
-  lines.push('let state = initialState();');
+  lines.push('// Per-session state: each SSE client gets its own state');
+  lines.push('var __sessions = new Map();');
+  lines.push('var __sessionTS = new Map();');
+  lines.push('');
+  lines.push('function __getState(sid) {');
+  lines.push('  if (!sid) sid = "__default";');
+  lines.push('  if (!__sessions.has(sid)) __sessions.set(sid, initialState());');
+  lines.push('  __sessionTS.set(sid, Date.now());');
+  lines.push('  return __sessions.get(sid);');
+  lines.push('}');
+  lines.push('');
+  lines.push('function __setState(sid, s) {');
+  lines.push('  if (!sid) sid = "__default";');
+  lines.push('  __sessions.set(sid, s);');
+  lines.push('  __sessionTS.set(sid, Date.now());');
+  lines.push('}');
   lines.push('');
   lines.push('// Server injects fetched data here before render');
   lines.push('var __magneticData = {};');
@@ -287,31 +302,64 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
   lines.push('');
   lines.push('export function getActionNames() { return typeof __actionNames !== "undefined" ? __actionNames : []; }');
   lines.push('');
-  lines.push('export function render(path) {');
-  lines.push('  const merged = Object.assign({}, __magneticData, state);');
-  lines.push('  const vm = toViewModel(merged);');
-  lines.push('  const result = router.resolve(path, vm);');
+  lines.push('function __errorBoundary(msg, path) {');
+  lines.push('  return { tag: "div", attrs: { "data-magnetic-error": "true" }, children: [');
+  lines.push('    { tag: "h2", text: "Render Error" },');
+  lines.push('    { tag: "pre", text: String(msg) },');
+  lines.push('    { tag: "p", text: "Path: " + path }');
+  lines.push('  ]};');
+  lines.push('}');
+  lines.push('');
+  lines.push('export function render(path, sid) {');
+  lines.push('  try {');
+  lines.push('    var st = __getState(sid);');
+  lines.push('    const merged = Object.assign({}, __magneticData, st);');
+  lines.push('    const vm = toViewModel(merged);');
+  lines.push('    const result = router.resolve(path, vm);');
   if (catchAllPage) {
-    lines.push(`  if (!result) return ${catchAllPage.importName}({ params: {} });`);
+    lines.push(`    if (!result) return ${catchAllPage.importName}({ params: {} });`);
   } else {
-    lines.push('  if (!result) return { tag: "div", text: "Not Found" };');
+    lines.push('    if (!result) return { tag: "div", text: "Not Found" };');
   }
-  lines.push('  if (result.kind === \'redirect\') {');
-  lines.push('    const r2 = router.resolve(result.to, vm);');
-  lines.push('    if (r2 && r2.kind === \'render\') return r2.dom;');
+  lines.push('    if (result.kind === \'redirect\') {');
+  lines.push('      const r2 = router.resolve(result.to, vm);');
+  lines.push('      if (r2 && r2.kind === \'render\') return r2.dom;');
   if (catchAllPage) {
-    lines.push(`    return ${catchAllPage.importName}({ params: {} });`);
+    lines.push(`      return ${catchAllPage.importName}({ params: {} });`);
   } else {
-    lines.push('    return { tag: "div", text: "Not Found" };');
+    lines.push('      return { tag: "div", text: "Not Found" };');
   }
+  lines.push('    }');
+  lines.push('    return result.dom;');
+  lines.push('  } catch(e) {');
+  lines.push('    return __errorBoundary(e && e.message || e, path);');
   lines.push('  }');
-  lines.push('  return result.dom;');
   lines.push('}');
   lines.push('');
   lines.push('export function reduce(ap) {');
-  lines.push('  const { action, payload = {}, path = \'/\' } = ap;');
-  lines.push('  state = _reduce(state, action, payload);');
-  lines.push('  return render(path);');
+  lines.push('  const { action, payload = {}, path = \'/\', session } = ap;');
+  lines.push('  var sid = session || "__default";');
+  lines.push('  try {');
+  lines.push('    var st = __getState(sid);');
+  lines.push('    __setState(sid, _reduce(st, action, payload));');
+  lines.push('  } catch(e) {');
+  lines.push('    return __errorBoundary("reduce(" + action + "): " + (e && e.message || e), path);');
+  lines.push('  }');
+  lines.push('  return render(path, sid);');
+  lines.push('}');
+  lines.push('');
+  lines.push('export function cleanupSessions(maxAgeMs) {');
+  lines.push('  var cutoff = Date.now() - (maxAgeMs || 1800000);');
+  lines.push('  for (var [sid, ts] of __sessionTS) {');
+  lines.push('    if (ts < cutoff && sid !== "__default") {');
+  lines.push('      __sessions.delete(sid); __sessionTS.delete(sid);');
+  lines.push('    }');
+  lines.push('  }');
+  lines.push('  return __sessions.size;');
+  lines.push('}');
+  lines.push('');
+  lines.push('export function dropSession(sid) {');
+  lines.push('  __sessions.delete(sid); __sessionTS.delete(sid);');
   lines.push('}');
 
   // CSS framework: renderWithCSS() — new export for SSR paths only
@@ -328,8 +376,8 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
       // Mode "all": generate every utility class once at init
       lines.push('var __cssCache = generateAllCSS(__designConfig);');
       lines.push('');
-      lines.push('export function renderWithCSS(path) {');
-      lines.push('  var dom = render(path);');
+      lines.push('export function renderWithCSS(path, sid) {');
+      lines.push('  var dom = render(path, sid);');
       lines.push('  return { root: dom, css: __cssCache };');
       lines.push('}');
 
@@ -360,8 +408,8 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
       lines.push('  __designConfig');
       lines.push(');');
       lines.push('');
-      lines.push('export function renderWithCSS(path) {');
-      lines.push('  var dom = render(path);');
+      lines.push('export function renderWithCSS(path, sid) {');
+      lines.push('  var dom = render(path, sid);');
       lines.push('  return { root: dom, css: __cssCache };');
       lines.push('}');
 
@@ -369,8 +417,8 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
       // Mode "used": per-request extraction — smallest output, but SSE may miss classes
       lines.push('var __cssExtractor = createExtractor(__designConfig);');
       lines.push('');
-      lines.push('export function renderWithCSS(path) {');
-      lines.push('  var dom = render(path);');
+      lines.push('export function renderWithCSS(path, sid) {');
+      lines.push('  var dom = render(path, sid);');
       lines.push('  return { root: dom, css: __cssExtractor(dom) };');
       lines.push('}');
     }

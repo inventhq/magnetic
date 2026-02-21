@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magnetic Glass Configurator</title>
+<style>
+/* ── Reset ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.5;color:var(--text);background:var(--bg)}
+body{min-height:100dvh;overflow-x:hidden}
+button{cursor:pointer;font:inherit;border:none;background:none}
+input[type=text],input[type=range]{font:inherit}
+
+/* ── Theme vars (updated by JS) ── */
+:root {
+  --bg: #0a0a0a;
+  --text: #e4e4e7;
+  --heading: #ffffff;
+  --muted: #71717a;
+  --subtle: #a1a1aa;
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --surface: #141414;
+  --raised: #1c1c1c;
+  --sunken: #0d0d0d;
+  --border: #252525;
+  --border-hover: #333333;
+  --danger: #ef4444;
+  --success: #10b981;
+
+  /* Glass params (controlled by sliders) */
+  --glass-blur: 20px;
+  --glass-bg-opacity: 0.08;
+  --glass-border-opacity: 0.12;
+  --glass-saturation: 1.8;
+  --glass-tint-h: 240;
+  --glass-tint-s: 60%;
+
+  /* Derived */
+  --glass-bg: rgba(255,255,255, var(--glass-bg-opacity));
+  --glass-border: rgba(255,255,255, var(--glass-border-opacity));
+  --glass-inner-glow: inset 0 1px 0 0 rgba(255,255,255,0.06);
+  --glass-inner-rgb: 30,30,30;
+  --glass-inner-opacity: 0.4;
+  --glass-inner-border-opacity: 0.1;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.5rem;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.12), 0 2px 4px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="light"] {
+  --bg: #f5f5f5;
+  --text: #1f1f1f;
+  --heading: #0a0a0a;
+  --muted: #6b7280;
+  --subtle: #9ca3af;
+  --surface: #ffffff;
+  --raised: #f9f9f9;
+  --sunken: #efefef;
+  --border: #e0e0e0;
+  --border-hover: #c0c0c0;
+  --glass-bg: rgba(255,255,255, var(--glass-bg-opacity));
+  --glass-border: rgba(255,255,255, var(--glass-border-opacity));
+}
+
+/* ── Vivid background (shows glass transparency) ── */
+.mesh-bg {
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse at 15% 80%, hsla(20, 80%, 45%, 0.6) 0%, transparent 40%),
+    radial-gradient(ellipse at 75% 15%, hsla(200, 70%, 50%, 0.5) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, hsla(280, 60%, 35%, 0.4) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 75%, hsla(30, 90%, 50%, 0.35) 0%, transparent 35%),
+    radial-gradient(ellipse at 20% 20%, hsla(170, 60%, 40%, 0.3) 0%, transparent 40%),
+    var(--bg);
+}
+
+/* ── Layout ── */
+.app {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: 100dvh;
+}
+
+/* ── Controls panel ── */
+.controls {
+  padding: 1.5rem;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.controls h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--heading);
+  letter-spacing: -0.02em;
+}
+.controls h2 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.slider-row label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--subtle);
+}
+.slider-row label span {
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+input[type=range] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+}
+
+/* Seed color */
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.color-row input[type=color] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+.color-row input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.color-row input[type=color]::-webkit-color-swatch { border: none; border-radius: 2px; }
+.color-row code {
+  font-size: 0.8rem;
+  color: var(--subtle);
+  font-family: ui-monospace, monospace;
+}
+
+/* Preset buttons */
+.presets {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  color: var(--subtle);
+  background: var(--sunken);
+  transition: all 150ms ease;
+}
+.preset-btn:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.preset-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* Theme toggle */
+.theme-toggle {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--sunken);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+.theme-toggle button {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition: all 150ms ease;
+}
+.theme-toggle button.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Export button */
+.export-btn {
+  padding: 0.5rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--primary);
+  color: #fff;
+  transition: opacity 150ms ease;
+}
+.export-btn:hover { opacity: 0.85; }
+
+/* Export output */
+.export-output {
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--subtle);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre;
+  display: none;
+  line-height: 1.4;
+}
+
+/* ── Preview area ── */
+.preview {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  overflow-y: auto;
+}
+.preview h2 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Glass classes (what we'd ship) ── */
+.glass {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  background: var(--glass-bg);
+  box-shadow: var(--glass-inner-glow);
+}
+.glass-border {
+  border: 1px solid var(--glass-border);
+}
+.glass-tint {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  background: hsla(var(--glass-tint-h), var(--glass-tint-s), 50%, var(--glass-bg-opacity));
+  box-shadow: var(--glass-inner-glow);
+}
+.glass-sm {
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.5)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.5)) saturate(var(--glass-saturation));
+  background: var(--glass-bg);
+  box-shadow: var(--glass-inner-glow);
+}
+.glass-lg {
+  backdrop-filter: blur(calc(var(--glass-blur) * 2)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 2)) saturate(var(--glass-saturation));
+  background: rgba(255,255,255, calc(var(--glass-bg-opacity) * 1.5));
+  box-shadow: var(--glass-inner-glow);
+}
+.glass-inner {
+  background: rgba(var(--glass-inner-rgb), var(--glass-inner-opacity, 0.15));
+  border: 1px solid rgba(var(--glass-inner-rgb), var(--glass-inner-border-opacity, 0.12));
+  box-shadow: var(--glass-inner-glow);
+}
+.glass-dark {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  background: rgba(40, 40, 40, var(--glass-bg-opacity));
+  box-shadow: inset 2px 4px 16px rgba(248, 248, 248, 0.06);
+}
+.glass-fade-border {
+  border: 1.5px solid rgba(255, 255, 255, var(--glass-border-opacity));
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 75%);
+  mask-image: linear-gradient(to bottom, black, transparent 75%);
+}
+.glass-fade-border-wrap {
+  position: relative;
+}
+.glass-fade-border-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid rgba(255, 255, 255, var(--glass-border-opacity));
+  border-radius: inherit;
+  mask-image: linear-gradient(to bottom, black, transparent 75%);
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 75%);
+  pointer-events: none;
+}
+
+/* Elevation classes */
+.elevation-0 {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.elevation-1 {
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.5)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.5)) saturate(var(--glass-saturation));
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-sm), var(--glass-inner-glow);
+}
+.elevation-2 {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-md), var(--glass-inner-glow);
+}
+.elevation-3 {
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(var(--glass-saturation));
+  background: color-mix(in srgb, var(--surface) 35%, transparent);
+  border: 1px solid rgba(255,255,255, calc(var(--glass-border-opacity) * 1.4));
+  box-shadow: var(--shadow-lg), var(--glass-inner-glow);
+}
+.elevation-4 {
+  backdrop-filter: blur(calc(var(--glass-blur) * 2)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 2)) saturate(var(--glass-saturation));
+  background: color-mix(in srgb, var(--surface) 25%, transparent);
+  border: 1px solid rgba(255,255,255, calc(var(--glass-border-opacity) * 1.8));
+  box-shadow: var(--shadow-lg), var(--glass-inner-glow);
+}
+
+/* ── Bento grid ── */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: minmax(140px, auto);
+  gap: 0.75rem;
+  max-width: 720px;
+}
+.bento-item {
+  border-radius: var(--radius-xl);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  position: relative;
+  transition: transform 200ms ease;
+}
+.bento-item:hover { transform: translateY(-2px); }
+.bento-item.span-2 { grid-column: span 2; }
+.bento-item.tall { grid-row: span 2; }
+.bento-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.25rem;
+}
+.bento-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--heading);
+  line-height: 1.3;
+}
+.bento-desc {
+  font-size: 0.75rem;
+  color: var(--subtle);
+  line-height: 1.4;
+  margin-top: 0.25rem;
+}
+
+/* Nested inner card */
+.inner-card {
+  border-radius: var(--radius-lg);
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+/* Icon circles (iOS-style) */
+.icon-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+.icon-circle {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: var(--heading);
+}
+.icon-circle.primary { background: var(--primary); color: #fff; }
+.icon-circle.glass-circle {
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  background: rgba(255,255,255, calc(var(--glass-bg-opacity) * 0.8));
+  border: 1px solid rgba(255,255,255, calc(var(--glass-border-opacity) * 0.5));
+}
+
+/* Pill button */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid var(--glass-border);
+  color: var(--heading);
+  background: rgba(255,255,255, calc(var(--glass-bg-opacity) * 0.6));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Slider mock (iOS-style) */
+.mock-slider-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.1);
+  position: relative;
+  margin: 0.75rem 0;
+}
+.mock-slider-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 55%;
+  border-radius: 3px;
+  background: var(--primary);
+}
+.mock-slider-thumb {
+  position: absolute;
+  top: 50%;
+  left: 55%;
+  transform: translate(-50%, -50%);
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+/* Task items inside bento */
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+.task-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.task-dot.done { background: var(--primary); }
+.task-dot.pending { border: 2px solid var(--muted); }
+
+/* ── Elevation scale ── */
+.elevation-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.elevation-card {
+  flex: 1;
+  min-width: 100px;
+  padding: 1.25rem 1rem;
+  border-radius: var(--radius-lg);
+  text-align: center;
+  transition: all 200ms ease;
+}
+.elevation-card .level {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+.elevation-card .desc {
+  font-size: 0.65rem;
+  color: var(--subtle);
+}
+
+/* ── Utility classes preview ── */
+.class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.5rem;
+}
+.class-chip {
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--subtle);
+  border: 1px solid var(--border);
+  background: var(--sunken);
+}
+.class-chip code {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+  .controls {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .preview {
+    padding: 1rem;
+  }
+  .bento {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bento-item.tall { grid-row: span 1; }
+}
+@media (max-width: 520px) {
+  .bento {
+    grid-template-columns: 1fr;
+  }
+  .bento-item.span-2 { grid-column: span 1; }
+}
+</style>
+</head>
+<body>
+<div class="mesh-bg"></div>
+
+<div class="app">
+  <!-- ── Controls ── -->
+  <div class="controls">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h1>Magnetic Glass</h1>
+      <div class="theme-toggle">
+        <button id="btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+        <button id="btn-light" onclick="setTheme('light')">Light</button>
+      </div>
+    </div>
+
+    <!-- Seed color -->
+    <div class="control-group">
+      <h2>Seed Color</h2>
+      <div class="color-row">
+        <input type="color" id="seed-color" value="#6366f1">
+        <code id="seed-hex">#6366f1</code>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="control-group">
+      <h2>Scheme</h2>
+      <div class="presets">
+        <button class="preset-btn" data-preset="bento" onclick="applyPreset('bento')">Bento Dark</button>
+        <button class="preset-btn active" data-preset="glass" onclick="applyPreset('glass')">Glass</button>
+        <button class="preset-btn" data-preset="vision" onclick="applyPreset('vision')">Vision Pro</button>
+        <button class="preset-btn" data-preset="ios" onclick="applyPreset('ios')">iOS Vibrant</button>
+        <button class="preset-btn" data-preset="ui8" onclick="applyPreset('ui8')">UI8 Bento</button>
+      </div>
+    </div>
+
+    <!-- Glass params -->
+    <div class="control-group">
+      <h2>Glass</h2>
+      <div class="slider-row">
+        <label>Blur <span id="v-blur">20px</span></label>
+        <input type="range" id="s-blur" min="0" max="60" value="20" step="1">
+      </div>
+      <div class="slider-row">
+        <label>BG Opacity <span id="v-bg-opacity">0.08</span></label>
+        <input type="range" id="s-bg-opacity" min="0" max="1" value="0.08" step="0.01">
+      </div>
+      <div class="slider-row">
+        <label>Border Opacity <span id="v-border-opacity">0.12</span></label>
+        <input type="range" id="s-border-opacity" min="0" max="0.5" value="0.12" step="0.01">
+      </div>
+      <div class="slider-row">
+        <label>Saturation <span id="v-saturation">1.8</span></label>
+        <input type="range" id="s-saturation" min="0.5" max="3" value="1.8" step="0.1">
+      </div>
+    </div>
+
+    <!-- Elevation -->
+    <div class="control-group">
+      <h2>Shadows</h2>
+      <div class="slider-row">
+        <label>Shadow Intensity <span id="v-shadow">1.0</span></label>
+        <input type="range" id="s-shadow" min="0" max="2" value="1" step="0.1">
+      </div>
+    </div>
+
+    <!-- Radius -->
+    <div class="control-group">
+      <h2>Radius</h2>
+      <div class="slider-row">
+        <label>Card Radius <span id="v-radius">20px</span></label>
+        <input type="range" id="s-radius" min="0" max="40" value="20" step="1">
+      </div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <!-- Export -->
+    <button class="export-btn" onclick="exportJSON()">Export design.json</button>
+    <pre class="export-output" id="export-output"></pre>
+  </div>
+
+  <!-- ── Preview ── -->
+  <div class="preview">
+
+    <!-- Bento grid (like Image 1: dark glass cards over vivid bg) -->
+    <div>
+      <h2>Bento Grid</h2>
+      <div class="bento" style="margin-top:0.75rem">
+
+        <!-- Hero card: span 2 cols (like the Download Manager card) -->
+        <div class="bento-item span-2 glass glass-border">
+          <div>
+            <div class="bento-label">Server-Driven UI</div>
+            <div class="bento-title">Magnetic Framework</div>
+            <div class="bento-desc">Build apps with zero client state. Server renders JSON DOM, client is a pure shell.</div>
+          </div>
+          <div style="margin-top:1rem">
+            <span class="pill">Discover</span>
+          </div>
+        </div>
+
+        <!-- Tall card: nested glass (like the Profile Wizard card) -->
+        <div class="bento-item tall glass glass-border">
+          <div class="bento-label">Components</div>
+          <div class="inner-card glass-inner" style="flex:1;display:flex;flex-direction:column;gap:0.4rem">
+            <div class="task-row glass-inner">
+              <div class="task-dot done"></div>
+              <span>Build reducer</span>
+            </div>
+            <div class="task-row glass-inner">
+              <div class="task-dot done"></div>
+              <span>Wire SSE</span>
+            </div>
+            <div class="task-row glass-inner">
+              <div class="task-dot pending"></div>
+              <span>Add routing</span>
+            </div>
+            <div class="task-row glass-inner">
+              <div class="task-dot pending"></div>
+              <span>Deploy edge</span>
+            </div>
+          </div>
+          <div class="bento-title" style="margin-top:0.75rem;font-size:0.85rem">Task Board</div>
+          <div class="bento-desc">4 tasks, 2 complete</div>
+        </div>
+
+        <!-- iOS Control Center style: Display slider -->
+        <div class="bento-item span-2 glass-tint glass-border">
+          <div class="bento-label">Display</div>
+          <div class="mock-slider-track">
+            <div class="mock-slider-fill"></div>
+            <div class="mock-slider-thumb"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:0.75rem;color:var(--muted)">&#9788;</span>
+            <span style="font-size:1.1rem;color:var(--subtle)">&#9788;</span>
+          </div>
+        </div>
+
+        <!-- Icon circles row (iOS Control Center style) -->
+        <div class="bento-item glass glass-border" style="align-items:center;justify-content:center;gap:0.75rem">
+          <div class="icon-row" style="margin:0">
+            <div class="icon-circle glass-circle">&#9679;</div>
+            <div class="icon-circle primary">+</div>
+            <div class="icon-circle glass-circle">&#10005;</div>
+          </div>
+          <div class="bento-desc" style="text-align:center;margin-top:0.5rem">Quick Actions</div>
+        </div>
+
+        <!-- Nested card demo (like Image 4: card inside card) -->
+        <div class="bento-item glass glass-border">
+          <div class="bento-label">Billing</div>
+          <div class="inner-card glass-inner" style="text-align:center;padding:1rem">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums">$60.00</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.25rem;margin-top:0.5rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.7rem;color:var(--muted)">
+              <div style="width:6px;height:6px;border-radius:50%;background:var(--primary)"></div> Paid
+            </div>
+            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.7rem;color:var(--muted)">
+              <div style="width:6px;height:6px;border-radius:50%;border:1.5px solid var(--muted)"></div> Open
+            </div>
+          </div>
+        </div>
+
+        <!-- Sound card (iOS-style tinted glass) -->
+        <div class="bento-item glass-tint glass-border">
+          <div class="bento-label">Sound</div>
+          <div class="mock-slider-track">
+            <div class="mock-slider-fill" style="width:35%"></div>
+            <div class="mock-slider-thumb" style="left:35%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:0.8rem;color:var(--muted)">&#9834;</span>
+            <span style="font-size:1rem;color:var(--subtle)">&#9834;</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Vision Pro style panel (Image 2: light frosted, high blur) -->
+    <div>
+      <h2>Vision Pro Panel</h2>
+      <div style="margin-top:0.75rem;max-width:600px">
+        <div class="glass-lg glass-border" style="border-radius:var(--radius-xl);padding:2rem;position:relative">
+          <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem">Our Nearby Neighbors</div>
+          <div style="font-size:1.6rem;font-weight:800;color:var(--heading);letter-spacing:-0.02em">Objects in Orbit</div>
+          <div style="font-size:0.8rem;color:var(--text);line-height:1.6;margin-top:0.75rem;max-width:340px">
+            The Moon orbits the Earth in an elliptical orbit. It's the most visible object in our sky, but it's farther from us than you might think.
+          </div>
+          <div style="margin-top:1rem;display:flex;gap:0.4rem">
+            <span class="pill">Satellite</span>
+            <span class="pill">Moon</span>
+            <span class="pill">Telescope</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Elevation scale -->
+    <div>
+      <h2>Elevation Scale</h2>
+      <div class="elevation-row" style="margin-top:0.75rem">
+        <div class="elevation-card elevation-0">
+          <div class="level">Level 0</div>
+          <div class="desc">Flat surface</div>
+        </div>
+        <div class="elevation-card elevation-1">
+          <div class="level">Level 1</div>
+          <div class="desc">Cards, items</div>
+        </div>
+        <div class="elevation-card elevation-2">
+          <div class="level">Level 2</div>
+          <div class="desc">Panels, sheets</div>
+        </div>
+        <div class="elevation-card elevation-3">
+          <div class="level">Level 3</div>
+          <div class="desc">Modals, dialogs</div>
+        </div>
+        <div class="elevation-card elevation-4">
+          <div class="level">Level 4</div>
+          <div class="desc">Overlays, toasts</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Glass variants -->
+    <div>
+      <h2>Glass Variants</h2>
+      <div style="display:flex;gap:0.75rem;margin-top:0.75rem;flex-wrap:wrap">
+        <div class="glass-sm glass-border" style="padding:1.25rem;border-radius:var(--radius-lg);flex:1;min-width:120px;text-align:center">
+          <div style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">glass-sm</div>
+          <div style="font-size:0.65rem;color:var(--subtle);margin-top:0.25rem">Light blur</div>
+        </div>
+        <div class="glass glass-border" style="padding:1.25rem;border-radius:var(--radius-lg);flex:1;min-width:120px;text-align:center">
+          <div style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">glass</div>
+          <div style="font-size:0.65rem;color:var(--subtle);margin-top:0.25rem">Default</div>
+        </div>
+        <div class="glass-tint glass-border" style="padding:1.25rem;border-radius:var(--radius-lg);flex:1;min-width:120px;text-align:center">
+          <div style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">glass-tint</div>
+          <div style="font-size:0.65rem;color:var(--subtle);margin-top:0.25rem">Seed tinted</div>
+        </div>
+        <div class="glass-dark glass-fade-border-wrap" style="padding:1.25rem;border-radius:var(--radius-lg);flex:1;min-width:120px;text-align:center">
+          <div style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">glass-dark</div>
+          <div style="font-size:0.65rem;color:var(--subtle);margin-top:0.25rem">Dark translucent</div>
+        </div>
+        <div class="glass-lg glass-border" style="padding:1.25rem;border-radius:var(--radius-lg);flex:1;min-width:120px;text-align:center">
+          <div style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">glass-lg</div>
+          <div style="font-size:0.65rem;color:var(--subtle);margin-top:0.25rem">Heavy blur</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Proposed class names -->
+    <div>
+      <h2>Proposed Utility Classes</h2>
+      <div class="class-grid" style="margin-top:0.75rem">
+        <div class="class-chip"><code>glass</code> &mdash; blur + translucent bg</div>
+        <div class="class-chip"><code>glass-sm</code> &mdash; subtle blur</div>
+        <div class="class-chip"><code>glass-lg</code> &mdash; heavy blur</div>
+        <div class="class-chip"><code>glass-tint</code> &mdash; seed-color tinted</div>
+        <div class="class-chip"><code>glass-dark</code> &mdash; dark translucent</div>
+        <div class="class-chip"><code>glass-border</code> &mdash; frosted edge</div>
+        <div class="class-chip"><code>glass-fade-border</code> &mdash; gradient-masked</div>
+        <div class="class-chip"><code>glass-inner</code> &mdash; nested layer</div>
+        <div class="class-chip"><code>elevation-0</code> &mdash; flat surface</div>
+        <div class="class-chip"><code>elevation-1</code> &mdash; card level</div>
+        <div class="class-chip"><code>elevation-2</code> &mdash; panel level</div>
+        <div class="class-chip"><code>elevation-3</code> &mdash; modal level</div>
+        <div class="class-chip"><code>elevation-4</code> &mdash; overlay level</div>
+        <div class="class-chip"><code>blur-sm</code> &mdash; 4px backdrop</div>
+        <div class="class-chip"><code>blur-md</code> &mdash; 12px backdrop</div>
+        <div class="class-chip"><code>blur-lg</code> &mdash; 16px backdrop</div>
+        <div class="class-chip"><code>blur-xl</code> &mdash; 24px backdrop</div>
+        <div class="class-chip"><code>blur-2xl</code> &mdash; 40px backdrop</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── State ──
+const root = document.documentElement;
+let currentTheme = 'dark';
+let currentPreset = 'glass';
+
+// ── Slider bindings ──
+const sliders = {
+  blur:          { el: 's-blur',           display: 'v-blur',           prop: '--glass-blur',           unit: 'px',  fmt: v => v + 'px' },
+  bgOpacity:     { el: 's-bg-opacity',     display: 'v-bg-opacity',     prop: '--glass-bg-opacity',     unit: '',    fmt: v => (+v).toFixed(2) },
+  borderOpacity: { el: 's-border-opacity', display: 'v-border-opacity', prop: '--glass-border-opacity', unit: '',    fmt: v => (+v).toFixed(2) },
+  saturation:    { el: 's-saturation',     display: 'v-saturation',     prop: '--glass-saturation',     unit: '',    fmt: v => (+v).toFixed(1) },
+  shadow:        { el: 's-shadow',         display: 'v-shadow',         prop: null,                     unit: '',    fmt: v => (+v).toFixed(1) },
+  radius:        { el: 's-radius',         display: 'v-radius',         prop: '--radius-lg',            unit: 'px',  fmt: v => v + 'px' },
+};
+
+for (const [key, cfg] of Object.entries(sliders)) {
+  const el = document.getElementById(cfg.el);
+  el.addEventListener('input', () => {
+    const v = el.value;
+    document.getElementById(cfg.display).textContent = cfg.fmt(v);
+    if (cfg.prop) {
+      root.style.setProperty(cfg.prop, v + cfg.unit);
+    }
+    if (key === 'bgOpacity' || key === 'borderOpacity') updateGlassColors();
+    if (key === 'shadow') updateShadows(v);
+    if (key === 'radius') {
+      root.style.setProperty('--radius-lg', v + 'px');
+      root.style.setProperty('--radius-xl', (parseFloat(v) * 1.25) + 'px');
+      root.style.setProperty('--radius-md', (parseFloat(v) * 0.625) + 'px');
+    }
+  });
+}
+
+function updateGlassColors() {
+  const bgO = document.getElementById('s-bg-opacity').value;
+  const bO = document.getElementById('s-border-opacity').value;
+  const isDark = currentTheme === 'dark';
+  // Dark mode: white overlay on dark. Light mode: white overlay for frosted look.
+  root.style.setProperty('--glass-bg', `rgba(255,255,255, ${bgO})`);
+  root.style.setProperty('--glass-border', `rgba(255,255,255, ${bO})`);
+  // Inner glow scales with border opacity
+  const glowAlpha = Math.min(parseFloat(bO) * 0.5, 0.08).toFixed(3);
+  root.style.setProperty('--glass-inner-glow', `inset 0 1px 0 0 rgba(255,255,255,${glowAlpha})`);
+  // Inner layers: dark on dark theme, light on light theme
+  const isUI8 = currentPreset === 'ui8';
+  if (isDark) {
+    root.style.setProperty('--glass-inner-rgb', isUI8 ? '40,40,40' : '30,30,30');
+    root.style.setProperty('--glass-inner-opacity', isUI8 ? '0.6' : '0.4');
+    root.style.setProperty('--glass-inner-border-opacity', isUI8 ? '0.08' : '0.1');
+  } else {
+    root.style.setProperty('--glass-inner-rgb', '255,255,255');
+    root.style.setProperty('--glass-inner-opacity', '0.35');
+    root.style.setProperty('--glass-inner-border-opacity', '0.2');
+  }
+  // Update tint hue from seed color
+  const hex = document.getElementById('seed-color').value;
+  const [h, s] = hexToHSL(hex);
+  root.style.setProperty('--glass-tint-h', Math.round(h));
+  root.style.setProperty('--glass-tint-s', Math.round(Math.min(s, 70)) + '%');
+}
+
+function updateShadows(intensity) {
+  const i = parseFloat(intensity);
+  root.style.setProperty('--shadow-sm', `0 1px 2px rgb(0 0 0 / ${(0.05 * i).toFixed(3)})`);
+  root.style.setProperty('--shadow-md', `0 4px 6px rgb(0 0 0 / ${(0.07 * i).toFixed(3)}), 0 2px 4px rgb(0 0 0 / ${(0.06 * i).toFixed(3)})`);
+  root.style.setProperty('--shadow-lg', `0 8px 32px rgba(0, 0, 0, ${(0.5 * i).toFixed(2)})`);
+}
+
+// ── Theme toggle ──
+function setTheme(theme) {
+  currentTheme = theme;
+  root.setAttribute('data-theme', theme);
+  document.getElementById('btn-dark').classList.toggle('active', theme === 'dark');
+  document.getElementById('btn-light').classList.toggle('active', theme === 'light');
+  updatePaletteFromSeed();
+  updateGlassColors();
+}
+
+// ── Presets ──
+const presets = {
+  bento:   { blur: 16, bgOpacity: 0.06, borderOpacity: 0.10, saturation: 1.4, shadow: 1.2, radius: 22, dark: false },
+  glass:   { blur: 20, bgOpacity: 0.08, borderOpacity: 0.12, saturation: 1.8, shadow: 1.0, radius: 20, dark: false },
+  vision:  { blur: 40, bgOpacity: 0.35, borderOpacity: 0.18, saturation: 2.0, shadow: 0.4, radius: 28, dark: false },
+  ios:     { blur: 28, bgOpacity: 0.15, borderOpacity: 0.14, saturation: 2.5, shadow: 0.6, radius: 18, dark: false },
+  ui8:     { blur: 50, bgOpacity: 0.80, borderOpacity: 0.05, saturation: 1.2, shadow: 0.8, radius: 32, dark: true },
+};
+
+function applyPreset(name) {
+  currentPreset = name;
+  const p = presets[name];
+
+  // Vision Pro looks best in light mode, others in dark
+  if (name === 'vision' && currentTheme === 'dark') setTheme('light');
+  else if ((name === 'bento' || name === 'ui8') && currentTheme === 'light') setTheme('dark');
+
+  setSlider('s-blur', p.blur, 'v-blur', v => v + 'px');
+  setSlider('s-bg-opacity', p.bgOpacity, 'v-bg-opacity', v => (+v).toFixed(2));
+  setSlider('s-border-opacity', p.borderOpacity, 'v-border-opacity', v => (+v).toFixed(2));
+  setSlider('s-saturation', p.saturation, 'v-saturation', v => (+v).toFixed(1));
+  setSlider('s-shadow', p.shadow, 'v-shadow', v => (+v).toFixed(1));
+  setSlider('s-radius', p.radius, 'v-radius', v => v + 'px');
+
+  root.style.setProperty('--glass-blur', p.blur + 'px');
+  root.style.setProperty('--glass-bg-opacity', p.bgOpacity);
+  root.style.setProperty('--glass-border-opacity', p.borderOpacity);
+  root.style.setProperty('--glass-saturation', p.saturation);
+  root.style.setProperty('--radius-lg', p.radius + 'px');
+  root.style.setProperty('--radius-xl', (p.radius * 1.25) + 'px');
+  root.style.setProperty('--radius-md', (p.radius * 0.625) + 'px');
+
+  // UI8 Bento uses dark glass (rgba(40,40,40,α)) + gradient-masked borders
+  applyDarkGlassMode(p.dark);
+
+  updateGlassColors();
+  updateShadows(p.shadow);
+
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === name);
+  });
+}
+
+// Toggle dark glass mode: swaps .glass → .glass-dark + .glass-border → .glass-fade-border-wrap
+function applyDarkGlassMode(isDarkGlass) {
+  const bentoItems = document.querySelectorAll('.bento-item');
+  const visionPanel = document.querySelector('.preview .glass-lg, .preview .glass-dark-panel');
+
+  bentoItems.forEach(el => {
+    if (isDarkGlass) {
+      el.classList.remove('glass', 'glass-tint');
+      el.classList.add('glass-dark');
+      el.classList.remove('glass-border');
+      el.classList.add('glass-fade-border-wrap');
+    } else {
+      el.classList.remove('glass-dark', 'glass-fade-border-wrap');
+      // Restore original classes based on element context
+      if (el.querySelector('.mock-slider-track')) {
+        el.classList.add('glass-tint', 'glass-border');
+      } else {
+        el.classList.add('glass', 'glass-border');
+      }
+    }
+  });
+
+  // Dark glass: inner layers use dark translucent, not white
+  if (isDarkGlass) {
+    root.style.setProperty('--glass-inner-rgb', '40,40,40');
+    root.style.setProperty('--bg', '#2a2a2a');
+    root.style.setProperty('--surface', '#383838');
+    root.style.setProperty('--raised', '#404040');
+    root.style.setProperty('--sunken', '#282828');
+    root.style.setProperty('--border', '#4a4a4a');
+    root.style.setProperty('--border-hover', '#5a5a5a');
+    root.style.setProperty('--glass-inner-glow', 'inset 2px 4px 16px rgba(248, 248, 248, 0.06)');
+  } else {
+    root.style.setProperty('--glass-inner-rgb', '255,255,255');
+  }
+}
+
+function setSlider(sliderId, value, displayId, fmt) {
+  document.getElementById(sliderId).value = value;
+  document.getElementById(displayId).textContent = fmt(value);
+}
+
+// ── Seed color → palette ──
+document.getElementById('seed-color').addEventListener('input', (e) => {
+  document.getElementById('seed-hex').textContent = e.target.value;
+  updatePaletteFromSeed();
+});
+
+function hexToHSL(hex) {
+  let r = parseInt(hex.slice(1, 3), 16) / 255;
+  let g = parseInt(hex.slice(3, 5), 16) / 255;
+  let b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return [h * 360, s * 100, l * 100];
+}
+
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * Math.max(0, Math.min(1, c))).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function updatePaletteFromSeed() {
+  const hex = document.getElementById('seed-color').value;
+  const [h, s, l] = hexToHSL(hex);
+  const isDark = currentTheme === 'dark';
+
+  root.style.setProperty('--primary', hex);
+  root.style.setProperty('--primary-hover', hslToHex(h, s, Math.max(l - 10, 10)));
+
+  if (isDark) {
+    root.style.setProperty('--bg', hslToHex(h, Math.min(s * 0.15, 8), 4));
+    root.style.setProperty('--surface', hslToHex(h, Math.min(s * 0.1, 6), 8));
+    root.style.setProperty('--raised', hslToHex(h, Math.min(s * 0.1, 6), 11));
+    root.style.setProperty('--sunken', hslToHex(h, Math.min(s * 0.1, 5), 5));
+    root.style.setProperty('--border', hslToHex(h, Math.min(s * 0.08, 5), 15));
+    root.style.setProperty('--border-hover', hslToHex(h, Math.min(s * 0.1, 6), 22));
+    root.style.setProperty('--text', hslToHex(h, Math.min(s * 0.05, 4), 90));
+    root.style.setProperty('--heading', '#ffffff');
+    root.style.setProperty('--muted', hslToHex(h, Math.min(s * 0.05, 5), 48));
+    root.style.setProperty('--subtle', hslToHex(h, Math.min(s * 0.05, 5), 65));
+  } else {
+    root.style.setProperty('--bg', hslToHex(h, Math.min(s * 0.08, 5), 96));
+    root.style.setProperty('--surface', '#ffffff');
+    root.style.setProperty('--raised', hslToHex(h, Math.min(s * 0.05, 4), 98));
+    root.style.setProperty('--sunken', hslToHex(h, Math.min(s * 0.06, 5), 94));
+    root.style.setProperty('--border', hslToHex(h, Math.min(s * 0.06, 5), 88));
+    root.style.setProperty('--border-hover', hslToHex(h, Math.min(s * 0.08, 6), 75));
+    root.style.setProperty('--text', hslToHex(h, Math.min(s * 0.1, 8), 12));
+    root.style.setProperty('--heading', hslToHex(h, Math.min(s * 0.1, 8), 5));
+    root.style.setProperty('--muted', hslToHex(h, Math.min(s * 0.05, 5), 42));
+    root.style.setProperty('--subtle', hslToHex(h, Math.min(s * 0.05, 5), 62));
+  }
+
+  // Update mesh gradient with seed hue — vivid to show glass transparency
+  const meshBg = document.querySelector('.mesh-bg');
+  const a1 = isDark ? 0.6 : 0.25;
+  const a2 = isDark ? 0.5 : 0.2;
+  meshBg.style.background = `
+    radial-gradient(ellipse at 15% 80%, hsla(${(h + 20) % 360}, 80%, 45%, ${a1}) 0%, transparent 40%),
+    radial-gradient(ellipse at 75% 15%, hsla(${(h + 200) % 360}, 70%, 50%, ${a2}) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, hsla(${(h + 280) % 360}, 60%, 35%, ${a2 * 0.8}) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 75%, hsla(${(h + 30) % 360}, 90%, 50%, ${a2 * 0.7}) 0%, transparent 35%),
+    radial-gradient(ellipse at 20% 20%, hsla(${(h + 170) % 360}, 60%, 40%, ${a2 * 0.6}) 0%, transparent 40%),
+    var(--bg)
+  `;
+
+  // Update glass tint
+  root.style.setProperty('--glass-tint-h', Math.round(h));
+  root.style.setProperty('--glass-tint-s', Math.round(Math.min(s, 70)) + '%');
+  updateGlassColors();
+}
+
+// ── Export ──
+function exportJSON() {
+  const out = document.getElementById('export-output');
+  const seed = document.getElementById('seed-color').value;
+  const p = {
+    blur: document.getElementById('s-blur').value,
+    bgOpacity: document.getElementById('s-bg-opacity').value,
+    borderOpacity: document.getElementById('s-border-opacity').value,
+    saturation: document.getElementById('s-saturation').value,
+  };
+  const styles = getComputedStyle(root);
+  const get = (v) => styles.getPropertyValue(v).trim();
+
+  const json = {
+    css: "pages",
+    palette: {
+      seed: seed,
+      scheme: currentPreset,
+    },
+    theme: {
+      colors: {
+        primary: get('--primary'),
+        "primary-hover": get('--primary-hover'),
+        danger: "#ef4444",
+        success: "#10b981",
+        surface: get('--surface'),
+        raised: get('--raised'),
+        sunken: get('--sunken'),
+        text: get('--text'),
+        heading: get('--heading'),
+        muted: get('--muted'),
+        subtle: get('--subtle'),
+        border: get('--border'),
+        "border-hover": get('--border-hover'),
+      },
+      glass: {
+        blur: p.blur + "px",
+        bgOpacity: parseFloat(p.bgOpacity),
+        borderOpacity: parseFloat(p.borderOpacity),
+        saturation: parseFloat(p.saturation),
+      },
+      spacing: {
+        xs: "0.25rem",
+        sm: "0.5rem",
+        md: "1rem",
+        lg: "1.5rem",
+        xl: "2rem",
+        "2xl": "3rem",
+        "3xl": "4rem",
+      },
+      radius: {
+        sm: get('--radius-sm'),
+        md: get('--radius-md'),
+        lg: get('--radius-lg'),
+        full: "9999px",
+      },
+      typography: {
+        sans: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        mono: "JetBrains Mono, ui-monospace, monospace",
+        sizes: {
+          xs: "0.75rem", sm: "0.85rem", base: "0.9rem", lg: "1.1rem",
+          xl: "1.25rem", "2xl": "1.5rem", "3xl": "1.75rem", "4xl": "2.25rem", "5xl": "3rem",
+        },
+        leading: { tight: "1.25", normal: "1.5", relaxed: "1.6" },
+      },
+      shadows: {
+        sm: get('--shadow-sm'),
+        md: get('--shadow-md'),
+        lg: get('--shadow-lg'),
+      },
+      breakpoints: { sm: "640px", md: "768px", lg: "1024px", xl: "1280px" },
+    },
+  };
+
+  out.textContent = JSON.stringify(json, null, 2);
+  out.style.display = 'block';
+}
+
+// ── Init ──
+updatePaletteFromSeed();
+</script>
+</body>
+</html>

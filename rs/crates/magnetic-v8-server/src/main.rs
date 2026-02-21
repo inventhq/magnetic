@@ -316,19 +316,23 @@ pub fn error_fallback(error_msg: &str, action: Option<&str>) -> DomNode {
 // ═══════════════════════════════════════════════════════════════════
 
 pub enum V8Request {
-    Render { path: String, reply: Arc<Reply> },
-    Reduce { action: String, payload: String, path: String, reply: Arc<Reply> },
+    Render { path: String, session_id: String, reply: Arc<Reply> },
+    Reduce { action: String, payload: String, path: String, session_id: String, reply: Arc<Reply> },
     /// Inject data context into V8 (calls MagneticApp.setData(json))
     SetData { json: String, reply: Arc<Reply> },
     /// Inject data then render (combined for atomicity)
-    RenderWithData { path: String, data_json: String, reply: Arc<Reply> },
+    RenderWithData { path: String, data_json: String, session_id: String, reply: Arc<Reply> },
     /// Call an API route handler (server/api/*.ts)
     ApiCall { method: String, path: String, body: String, reply: Arc<Reply> },
-    /// Call renderWithCSS(path) — returns {root: DomNode, css: string}
-    /// Falls back to render(path) if renderWithCSS is not exported
-    RenderWithCSS { path: String, reply: Arc<Reply> },
+    /// Call renderWithCSS(path, sid) — returns {root: DomNode, css: string}
+    /// Falls back to render(path, sid) if renderWithCSS is not exported
+    RenderWithCSS { path: String, session_id: String, reply: Arc<Reply> },
     /// Inject data then call renderWithCSS (combined for SSR with data)
-    RenderWithDataAndCSS { path: String, data_json: String, reply: Arc<Reply> },
+    RenderWithDataAndCSS { path: String, data_json: String, session_id: String, reply: Arc<Reply> },
+    /// Garbage-collect idle sessions in V8
+    CleanupSessions { max_age_ms: u64, reply: Arc<Reply> },
+    /// Drop a specific session (on SSE disconnect)
+    DropSession { session_id: String },
 }
 
 pub struct Reply {
@@ -392,68 +396,78 @@ pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
 
     for req in rx {
         match req {
-            V8Request::Render { path, reply } => {
-                let result = v8_call_render(&mut isolate, &global_context, &path);
+            V8Request::Render { path, session_id, reply } => {
+                let result = v8_call_render(&mut isolate, &global_context, &path, &session_id);
                 reply.send(result);
             }
-            V8Request::Reduce { action, payload, path, reply } => {
+            V8Request::Reduce { action, payload, path, session_id, reply } => {
                 let reduce_result = v8_call_reduce(
-                    &mut isolate, &global_context, &action, &payload,
+                    &mut isolate, &global_context, &action, &payload, &session_id,
                 );
                 if let V8Result::Err(e) = reduce_result {
                     eprintln!("[magnetic-v8] reduce error on \"{}\": {}", action, e);
                 }
-                let result = v8_call_render(&mut isolate, &global_context, &path);
+                let result = v8_call_render(&mut isolate, &global_context, &path, &session_id);
                 reply.send(result);
             }
             V8Request::SetData { json, reply } => {
                 let result = v8_call_set_data(&mut isolate, &global_context, &json);
                 reply.send(result);
             }
-            V8Request::RenderWithData { path, data_json, reply } => {
-                // Inject data context first, then render
+            V8Request::RenderWithData { path, data_json, session_id, reply } => {
                 let set_result = v8_call_set_data(&mut isolate, &global_context, &data_json);
                 if let V8Result::Err(e) = set_result {
                     eprintln!("[magnetic-v8] setData error: {}", e);
                 }
-                let result = v8_call_render(&mut isolate, &global_context, &path);
+                let result = v8_call_render(&mut isolate, &global_context, &path, &session_id);
                 reply.send(result);
             }
             V8Request::ApiCall { method, path, body, reply } => {
                 let result = v8_call_api(&mut isolate, &global_context, &method, &path, &body);
                 reply.send(result);
             }
-            V8Request::RenderWithCSS { path, reply } => {
-                let result = v8_call_render_with_css(&mut isolate, &global_context, &path);
+            V8Request::RenderWithCSS { path, session_id, reply } => {
+                let result = v8_call_render_with_css(&mut isolate, &global_context, &path, &session_id);
                 reply.send(result);
             }
-            V8Request::RenderWithDataAndCSS { path, data_json, reply } => {
+            V8Request::RenderWithDataAndCSS { path, data_json, session_id, reply } => {
                 let set_result = v8_call_set_data(&mut isolate, &global_context, &data_json);
                 if let V8Result::Err(e) = set_result {
                     eprintln!("[magnetic-v8] setData error: {}", e);
                 }
-                let result = v8_call_render_with_css(&mut isolate, &global_context, &path);
+                let result = v8_call_render_with_css(&mut isolate, &global_context, &path, &session_id);
                 reply.send(result);
+            }
+            V8Request::CleanupSessions { max_age_ms, reply } => {
+                let result = v8_call_cleanup_sessions(&mut isolate, &global_context, max_age_ms);
+                reply.send(result);
+            }
+            V8Request::DropSession { session_id } => {
+                v8_call_drop_session(&mut isolate, &global_context, &session_id);
             }
         }
     }
 }
 
-/// Call renderWithCSS(path) — returns JSON string of {root: DomNode, css: string}
-/// Falls back to render(path) wrapped as {root: DomNode} if renderWithCSS is not available
+/// Call renderWithCSS(path, sid) — returns JSON string of {root: DomNode, css: string}
+/// Falls back to render(path, sid) wrapped as {root: DomNode} if renderWithCSS is not available
 fn v8_call_render_with_css(
     isolate: &mut v8::OwnedIsolate,
     context: &v8::Global<v8::Context>,
     path: &str,
+    session_id: &str,
 ) -> V8Result {
     let handle_scope = &mut v8::HandleScope::new(isolate);
     let context = v8::Local::new(handle_scope, context);
     let scope = &mut v8::ContextScope::new(handle_scope, context);
 
+    let safe_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+    let safe_sid = session_id.replace('\\', "\\\\").replace('"', "\\\"");
+
     // Try renderWithCSS first, fall back to render if not available
     let call_code = format!(
-        r#"(function() {{ try {{ if (typeof globalThis.MagneticApp.renderWithCSS === 'function') {{ return JSON.stringify(globalThis.MagneticApp.renderWithCSS("{0}")); }} else {{ var dom = globalThis.MagneticApp.render("{0}"); return JSON.stringify({{root: dom, css: null}}); }} }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e)}}); }} }})()"#,
-        path.replace('\\', "\\\\").replace('"', "\\\"")
+        r#"(function() {{ try {{ if (typeof globalThis.MagneticApp.renderWithCSS === 'function') {{ return JSON.stringify(globalThis.MagneticApp.renderWithCSS("{0}", "{1}")); }} else {{ var dom = globalThis.MagneticApp.render("{0}", "{1}"); return JSON.stringify({{root: dom, css: null}}); }} }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e)}}); }} }})()"#,
+        safe_path, safe_sid
     );
 
     let code = v8::String::new(scope, &call_code).unwrap();
@@ -477,19 +491,23 @@ fn v8_call_render_with_css(
     }
 }
 
-/// Call render(path) with TryCatch error boundary
-fn v8_call_render(
+/// Call render(path, sid) with TryCatch error boundary
+pub fn v8_call_render(
     isolate: &mut v8::OwnedIsolate,
     context: &v8::Global<v8::Context>,
     path: &str,
+    session_id: &str,
 ) -> V8Result {
     let handle_scope = &mut v8::HandleScope::new(isolate);
     let context = v8::Local::new(handle_scope, context);
     let scope = &mut v8::ContextScope::new(handle_scope, context);
 
+    let safe_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+    let safe_sid = session_id.replace('\\', "\\\\").replace('"', "\\\"");
+
     let call_code = format!(
-        r#"(function() {{ try {{ return JSON.stringify(globalThis.MagneticApp.render("{}")); }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e)}}); }} }})()"#,
-        path.replace('\\', "\\\\").replace('"', "\\\"")
+        r#"(function() {{ try {{ return JSON.stringify(globalThis.MagneticApp.render("{}", "{}")); }} catch(e) {{ return JSON.stringify({{__error: e.message || String(e)}}); }} }})()"#,
+        safe_path, safe_sid
     );
 
     let code = v8::String::new(scope, &call_code).unwrap();
@@ -551,21 +569,23 @@ pub fn v8_call_set_data(
     }
 }
 
-/// Call reduce(action, payload) with TryCatch error boundary
+/// Call reduce({action, payload, session}) with TryCatch error boundary
 fn v8_call_reduce(
     isolate: &mut v8::OwnedIsolate,
     context: &v8::Global<v8::Context>,
     action: &str,
     payload: &str,
+    session_id: &str,
 ) -> V8Result {
     let handle_scope = &mut v8::HandleScope::new(isolate);
     let context = v8::Local::new(handle_scope, context);
     let scope = &mut v8::ContextScope::new(handle_scope, context);
 
     let inner_json = format!(
-        r#"{{"action":"{}","payload":{}}}"#,
+        r#"{{"action":"{}","payload":{},"session":"{}"}}"#,
         action.replace('\\', "\\\\").replace('"', "\\\""),
-        payload
+        payload,
+        session_id.replace('\\', "\\\\").replace('"', "\\\"")
     ).replace('\'', "\\'");
 
     let call_code = format!(
@@ -626,16 +646,91 @@ fn v8_call_api(
     }
 }
 
+/// Call cleanupSessions(maxAgeMs) — garbage collect idle sessions
+fn v8_call_cleanup_sessions(
+    isolate: &mut v8::OwnedIsolate,
+    context: &v8::Global<v8::Context>,
+    max_age_ms: u64,
+) -> V8Result {
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    let context = v8::Local::new(handle_scope, context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+    let call_code = format!(
+        r#"(function() {{ try {{ if (globalThis.MagneticApp && globalThis.MagneticApp.cleanupSessions) {{ return String(globalThis.MagneticApp.cleanupSessions({})); }} return "0"; }} catch(e) {{ return "err:" + e.message; }} }})()"#,
+        max_age_ms
+    );
+
+    let code = v8::String::new(scope, &call_code).unwrap();
+    let script = match v8::Script::compile(scope, code, None) {
+        Some(s) => s,
+        None => return V8Result::Err("Failed to compile cleanupSessions call".into()),
+    };
+    match script.run(scope) {
+        Some(result) => V8Result::Ok(result.to_rust_string_lossy(scope)),
+        None => V8Result::Ok("0".into()),
+    }
+}
+
+/// Call dropSession(sid) — remove a specific session from V8
+fn v8_call_drop_session(
+    isolate: &mut v8::OwnedIsolate,
+    context: &v8::Global<v8::Context>,
+    session_id: &str,
+) {
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    let context = v8::Local::new(handle_scope, context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+    let safe_sid = session_id.replace('\\', "\\\\").replace('"', "\\\"");
+    let call_code = format!(
+        r#"(function() {{ try {{ if (globalThis.MagneticApp && globalThis.MagneticApp.dropSession) globalThis.MagneticApp.dropSession("{}"); }} catch(e) {{}} }})()"#,
+        safe_sid
+    );
+
+    let code = v8::String::new(scope, &call_code).unwrap();
+    if let Some(script) = v8::Script::compile(scope, code, None) {
+        let _ = script.run(scope);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 5. SERVER STATE
 // ═══════════════════════════════════════════════════════════════════
 
+/// Generate a random session ID (hex string)
+pub fn generate_session_id() -> String {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let seed = now.as_nanos();
+    // Simple random-ish hex: mix timestamp with thread ID
+    let tid = std::thread::current().id();
+    let h = seed ^ (format!("{:?}", tid).len() as u128 * 0x9e3779b97f4a7c15);
+    format!("{:016x}", h as u64)
+}
+
+/// Extract session ID from Cookie header
+pub fn extract_session_cookie(headers: &HashMap<String, String>) -> Option<String> {
+    let cookie = headers.get("cookie")?;
+    for part in cookie.split(';') {
+        let part = part.trim();
+        if let Some(val) = part.strip_prefix("magnetic_sid=") {
+            let val = val.trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
 struct Server {
     v8_tx: mpsc::Sender<V8Request>,
-    sse_clients: Mutex<Vec<TcpStream>>,
+    /// Per-session SSE clients: session_id → list of TcpStream clones
+    sse_clients: Mutex<HashMap<String, Vec<TcpStream>>>,
     static_dir: String,
     asset_dir: String,
-    current_path: Mutex<String>,
+    /// Per-session current path: session_id → path
+    session_paths: Mutex<HashMap<String, String>>,
     inline_css: Option<String>,
     middleware: MiddlewareStack,
     manifest: AssetManifest,
@@ -674,7 +769,7 @@ fn main() {
         thread::spawn(move || v8_thread(js, rx));
 
         let reply = Reply::new();
-        tx.send(V8Request::Render { path: "/".into(), reply: reply.clone() }).unwrap();
+        tx.send(V8Request::Render { path: "/".into(), session_id: "__default".into(), reply: reply.clone() }).unwrap();
         let dom_json = match reply.recv() {
             V8Result::Ok(j) => j,
             V8Result::Err(e) => panic!("render() error: {}", e),
@@ -735,10 +830,10 @@ fn main() {
 
     let server = Arc::new(Server {
         v8_tx: tx,
-        sse_clients: Mutex::new(Vec::new()),
+        sse_clients: Mutex::new(HashMap::new()),
         static_dir: static_dir.clone(),
         asset_dir,
-        current_path: Mutex::new("/".to_string()),
+        session_paths: Mutex::new(HashMap::new()),
         inline_css,
         middleware,
         manifest,
@@ -833,13 +928,13 @@ fn handle_connection(mut stream: TcpStream, server: &Server) -> std::io::Result<
     let extra_headers = ctx.response_headers.clone();
 
     let result = match (method, path) {
-        ("GET", "/sse") => handle_sse(stream.try_clone()?, server, &extra_headers),
+        ("GET", "/sse") => handle_sse(stream.try_clone()?, server, &extra_headers, &ctx.headers),
         ("POST", p) if p.starts_with("/actions/") => {
             let mut body = vec![0u8; content_length];
             if content_length > 0 { reader.read_exact(&mut body)?; }
-            handle_action(&mut stream, server, p, &body, &extra_headers)
+            handle_action(&mut stream, server, p, &body, &extra_headers, &ctx.headers)
         }
-        ("GET", p) => handle_get(&mut stream, server, p, &extra_headers),
+        ("GET", p) => handle_get(&mut stream, server, p, &extra_headers, &ctx.headers),
         _ => {
             stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
         }
@@ -864,33 +959,51 @@ fn handle_sse(
     mut stream: TcpStream,
     server: &Server,
     extra_headers: &HashMap<String, String>,
+    req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
+    // Get or create session ID from cookie
+    let session_id = extract_session_cookie(req_headers)
+        .unwrap_or_else(generate_session_id);
+
     let eh = format_extra_headers(extra_headers);
     let header = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
-        Cache-Control: no-cache\r\nConnection: keep-alive\r\n{}\r\n", eh
+        Cache-Control: no-cache\r\nConnection: keep-alive\r\n\
+        Set-Cookie: magnetic_sid={}; Path=/; HttpOnly; SameSite=Lax\r\n{}\r\n",
+        session_id, eh
     );
     stream.write_all(header.as_bytes())?;
 
-    let path = server.current_path.lock().unwrap().clone();
+    let path = server.session_paths.lock().unwrap()
+        .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
     let reply = Reply::new();
-    server.v8_tx.send(V8Request::Render { path: path.clone(), reply: reply.clone() }).unwrap();
+    server.v8_tx.send(V8Request::Render { path: path.clone(), session_id: session_id.clone(), reply: reply.clone() }).unwrap();
     let dom_json = v8_result_to_json(reply.recv(), None);
     let snapshot = format!("{{\"root\":{}}}", dom_json);
     write_sse_event(&mut stream, snapshot.as_bytes())?;
 
     let client = stream.try_clone()?;
-    let client_count = {
+    {
         let mut clients = server.sse_clients.lock().unwrap();
-        clients.push(client);
-        clients.len()
-    };
-    eprintln!("[magnetic] SSE client connected (path={}, total={})", path, client_count);
+        clients.entry(session_id.clone()).or_insert_with(Vec::new).push(client);
+    }
+    eprintln!("[magnetic] SSE client connected (session={}, path={})", &session_id[..8], path);
 
     loop {
         thread::sleep(std::time::Duration::from_secs(30));
         if stream.write_all(b": keepalive\n\n").is_err() {
-            eprintln!("[magnetic] SSE client disconnected");
+            eprintln!("[magnetic] SSE client disconnected (session={})", &session_id[..8]);
+            // Clean up this client from sse_clients
+            let mut clients = server.sse_clients.lock().unwrap();
+            if let Some(list) = clients.get_mut(&session_id) {
+                list.retain(|mut c| c.write_all(b"").is_ok());
+                if list.is_empty() {
+                    clients.remove(&session_id);
+                    // Drop session state in V8
+                    let _ = server.v8_tx.send(V8Request::DropSession { session_id: session_id.clone() });
+                    server.session_paths.lock().unwrap().remove(&session_id);
+                }
+            }
             break;
         }
     }
@@ -903,9 +1016,14 @@ fn handle_action(
     url_path: &str,
     body: &[u8],
     extra_headers: &HashMap<String, String>,
+    req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     let action = urlencoding_decode(url_path.strip_prefix("/actions/").unwrap_or(""));
     let body_str = String::from_utf8_lossy(body);
+
+    // Session ID from cookie (fall back to __default for cookieless requests)
+    let session_id = extract_session_cookie(req_headers)
+        .unwrap_or_else(|| "__default".to_string());
 
     let payload = if body_str.is_empty() { "{}".to_string() } else {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body_str) {
@@ -921,21 +1039,22 @@ fn handle_action(
             .and_then(|v| v.get("path")?.as_str().map(String::from))
             .unwrap_or_else(|| "/".to_string());
 
-        eprintln!("[magnetic] navigate → {}", nav_path);
-        *server.current_path.lock().unwrap() = nav_path.clone();
+        eprintln!("[magnetic] navigate → {} (session={})", nav_path, &session_id[..std::cmp::min(8, session_id.len())]);
+        server.session_paths.lock().unwrap().insert(session_id.clone(), nav_path.clone());
         let v8_start = Instant::now();
         let reply = Reply::new();
-        server.v8_tx.send(V8Request::Render { path: nav_path, reply: reply.clone() }).unwrap();
+        server.v8_tx.send(V8Request::Render { path: nav_path, session_id: session_id.clone(), reply: reply.clone() }).unwrap();
         let dom_json = v8_result_to_json(reply.recv(), None);
         eprintln!("[magnetic] V8 render: {}ms", v8_start.elapsed().as_micros() as f64 / 1000.0);
         snapshot = format!("{{\"root\":{}}}", dom_json);
     } else {
-        let path = server.current_path.lock().unwrap().clone();
-        eprintln!("[magnetic] action: {} (path={})", action, path);
+        let path = server.session_paths.lock().unwrap()
+            .get(&session_id).cloned().unwrap_or_else(|| "/".to_string());
+        eprintln!("[magnetic] action: {} (session={}, path={})", action, &session_id[..std::cmp::min(8, session_id.len())], path);
         let v8_start = Instant::now();
         let reply = Reply::new();
         server.v8_tx.send(V8Request::Reduce {
-            action: action.clone(), payload, path, reply: reply.clone(),
+            action: action.clone(), payload, path, session_id: session_id.clone(), reply: reply.clone(),
         }).unwrap();
         let dom_json = v8_result_to_json(reply.recv(), Some(&action));
         eprintln!("[magnetic] V8 reduce: {}ms", v8_start.elapsed().as_micros() as f64 / 1000.0);
@@ -951,12 +1070,22 @@ fn handle_action(
     stream.write_all(resp.as_bytes())?;
     stream.write_all(snapshot.as_bytes())?;
 
+    // Broadcast only to this session's SSE clients (not all users)
     if action != "navigate" {
-        let client_count = server.sse_clients.lock().unwrap().len();
-        if client_count > 0 {
-            eprintln!("[magnetic] broadcasting to {} SSE client(s)", client_count);
+        let mut clients = server.sse_clients.lock().unwrap();
+        if let Some(list) = clients.get_mut(&session_id) {
+            let mut alive = Vec::new();
+            for mut client in list.drain(..) {
+                if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
+                    alive.push(client);
+                }
+            }
+            if alive.is_empty() {
+                clients.remove(&session_id);
+            } else {
+                *list = alive;
+            }
         }
-        broadcast_snapshot(server, snapshot.as_bytes());
     }
     Ok(())
 }
@@ -966,6 +1095,7 @@ fn handle_get(
     server: &Server,
     path: &str,
     extra_headers: &HashMap<String, String>,
+    req_headers: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     // Static files
     let has_ext = path.contains('.') && !path.ends_with('/');
@@ -974,14 +1104,18 @@ fn handle_get(
         return serve_static(stream, server, path, extra_headers);
     }
 
-    // SSR
+    // SSR — get or create session, set cookie
     let route_path = path.split('?').next().unwrap_or("/");
-    *server.current_path.lock().unwrap() = route_path.to_string();
+    let (session_id, is_new) = match extract_session_cookie(req_headers) {
+        Some(sid) => (sid, false),
+        None => (generate_session_id(), true),
+    };
+    server.session_paths.lock().unwrap().insert(session_id.clone(), route_path.to_string());
 
     // Use RenderWithCSS to get both DOM and generated CSS from V8
     let reply = Reply::new();
     server.v8_tx.send(V8Request::RenderWithCSS {
-        path: route_path.to_string(), reply: reply.clone(),
+        path: route_path.to_string(), session_id: session_id.clone(), reply: reply.clone(),
     }).unwrap();
 
     let (dom, generated_css) = match reply.recv() {
@@ -1036,10 +1170,15 @@ fn handle_get(
     });
 
     let eh = format_extra_headers(extra_headers);
+    let cookie_header = if is_new {
+        format!("Set-Cookie: magnetic_sid={}; Path=/; HttpOnly; SameSite=Lax\r\n", session_id)
+    } else {
+        String::new()
+    };
     let resp = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\
-        Content-Length: {}\r\n{}\r\n",
-        page.len(), eh
+        Content-Length: {}\r\n{}{}\r\n",
+        page.len(), cookie_header, eh
     );
     stream.write_all(resp.as_bytes())?;
     stream.write_all(page.as_bytes())
@@ -1117,17 +1256,6 @@ pub fn v8_result_to_json(result: V8Result, action: Option<&str>) -> String {
             })
         }
     }
-}
-
-pub fn broadcast_snapshot(server: &Server, snapshot: &[u8]) {
-    let mut clients = server.sse_clients.lock().unwrap();
-    let mut alive = Vec::new();
-    for mut client in clients.drain(..) {
-        if write_sse_event(&mut client, snapshot).is_ok() {
-            alive.push(client);
-        }
-    }
-    *clients = alive;
 }
 
 pub fn write_sse_event(stream: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {

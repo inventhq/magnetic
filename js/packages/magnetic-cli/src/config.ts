@@ -23,6 +23,8 @@ export interface DataSource {
   auth: boolean;
   /** SSR timeout: if fetch takes longer, render loading state. E.g. "100ms", "1s" */
   timeout?: string;
+  /** Number of retry attempts on fetch failure. Default: 0 (no retries) */
+  retries?: number;
 }
 
 // ── Action mapping types ────────────────────────────────────────────
@@ -168,6 +170,7 @@ export function parseAppConfig(appDir: string): MagneticAppConfig {
         page: src.page || '*',
         auth: src.auth === true,
         timeout: src.timeout,
+        retries: src.retries || 0,
       });
     }
   }
