@@ -37,23 +37,23 @@ function EventCard({ event }: { event: any }) {
 
   return (
     <div class="row gap-md items-center p-md bg-raised border round-md" key={event.event_id}>
-      <div class="stack gap-xs grow" key="info">
-        <div class="row gap-sm items-center" key="badges">
-          <span class={`text-xs bold px-sm py-xs round-sm ${eventTypeBadgeClass(eventType)}`} key="type">
+      <div class="stack gap-xs grow">
+        <div class="row gap-sm items-center">
+          <span class={`text-xs bold px-sm py-xs round-sm ${eventTypeBadgeClass(eventType)}`}>
             {eventType}
           </span>
           {carrier && (
-            <span class={`text-xs bold px-sm py-xs round-sm uppercase ${carrierBadgeClass(carrier)}`} key="carrier">
+            <span class={`text-xs bold px-sm py-xs round-sm uppercase ${carrierBadgeClass(carrier)}`}>
               {carrier}
             </span>
           )}
-          <span class="text-xs fg-muted" key="time">{time}</span>
+          <span class="text-xs fg-muted">{time}</span>
         </div>
         {tracking && (
-          <span class="text-sm font-mono fg-subtle" key="tracking">{tracking}</span>
+          <span class="text-sm font-mono fg-subtle">{tracking}</span>
         )}
       </div>
-      <span class="text-xs fg-muted font-mono truncate" key="id" style="max-width:120px">
+      <span class="text-xs fg-muted font-mono truncate" style="max-width:120px">
         {(event.event_id || '').slice(0, 12)}
       </span>
     </div>
