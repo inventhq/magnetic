@@ -128,6 +128,8 @@
       if (!renderer) continue;
       var node = renderer(dd.v);
       if (!node) continue;
+      // Dedup: skip if element with same key already exists in DOM
+      if (node.key && keys[node.key]) continue;
       var target = keys[dd.t] || root.querySelector('[data-key="' + dd.t + '"]');
       if (!target) continue;
       if (!keys[dd.t]) keys[dd.t] = target;
