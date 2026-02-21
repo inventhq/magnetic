@@ -115,53 +115,71 @@ fn start_data_threads(app: Arc<AppHandle>) {
         return;
     }
 
+    // Debounce flag: when SSE events arrive in rapid succession, we coalesce
+    // multiple on_change calls into a single re-render after a short delay.
+    // Without this, rapid-fire DOM snapshots overwhelm the browser WASM patcher.
+    let pending = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     let on_change: Arc<dyn Fn() + Send + Sync> = {
         let app = Arc::clone(&app);
+        let pending = Arc::clone(&pending);
         Arc::new(move || {
-            // Re-render for each active session and push SSE updates
-            let sessions: Vec<(String, String)> = {
-                let paths = app.session_paths.lock().unwrap();
-                paths.iter().map(|(sid, p)| (sid.clone(), p.clone())).collect()
-            };
-            if sessions.is_empty() {
+            // If a render is already scheduled, skip — it will pick up our data
+            if pending.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 return;
             }
-            let tx = match app.ensure_warm() {
-                Ok(tx) => tx,
-                Err(_) => return,
-            };
-            let ctx = match app.data_ctx {
-                Some(ref ctx) => ctx,
-                None => return,
-            };
-            for (session_id, path) in &sessions {
-                let data_json = ctx.data_json_for_page(path);
-                let reply = Reply::new();
-                if tx.send(V8Request::RenderWithData {
-                    path: path.clone(),
-                    session_id: session_id.clone(),
-                    data_json,
-                    reply: reply.clone(),
-                }).is_err() {
-                    continue;
+            let app = Arc::clone(&app);
+            let pending = Arc::clone(&pending);
+            thread::spawn(move || {
+                // Wait briefly to coalesce rapid-fire events
+                thread::sleep(std::time::Duration::from_millis(150));
+                pending.store(false, std::sync::atomic::Ordering::SeqCst);
+
+                // Re-render for each active session and push SSE updates
+                let sessions: Vec<(String, String)> = {
+                    let paths = app.session_paths.lock().unwrap();
+                    paths.iter().map(|(sid, p)| (sid.clone(), p.clone())).collect()
+                };
+                if sessions.is_empty() {
+                    return;
                 }
-                let dom_json = v8_result_to_json(reply.recv(), None);
-                let snapshot = format!("{{\"root\":{}}}", dom_json);
-                let mut clients = app.sse_clients.lock().unwrap();
-                if let Some(list) = clients.get_mut(session_id) {
-                    let mut alive = Vec::new();
-                    for mut client in list.drain(..) {
-                        if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
-                            alive.push(client);
+                let tx = match app.ensure_warm() {
+                    Ok(tx) => tx,
+                    Err(_) => return,
+                };
+                let ctx = match app.data_ctx {
+                    Some(ref ctx) => ctx,
+                    None => return,
+                };
+                for (session_id, path) in &sessions {
+                    let data_json = ctx.data_json_for_page(path);
+                    let reply = Reply::new();
+                    if tx.send(V8Request::RenderWithData {
+                        path: path.clone(),
+                        session_id: session_id.clone(),
+                        data_json,
+                        reply: reply.clone(),
+                    }).is_err() {
+                        continue;
+                    }
+                    let dom_json = v8_result_to_json(reply.recv(), None);
+                    let snapshot = format!("{{\"root\":{}}}", dom_json);
+                    let mut clients = app.sse_clients.lock().unwrap();
+                    if let Some(list) = clients.get_mut(session_id) {
+                        let mut alive = Vec::new();
+                        for mut client in list.drain(..) {
+                            if write_sse_event(&mut client, snapshot.as_bytes()).is_ok() {
+                                alive.push(client);
+                            }
+                        }
+                        if alive.is_empty() {
+                            clients.remove(session_id);
+                        } else {
+                            *list = alive;
                         }
                     }
-                    if alive.is_empty() {
-                        clients.remove(session_id);
-                    } else {
-                        *list = alive;
-                    }
                 }
-            }
+            });
         })
     };
 

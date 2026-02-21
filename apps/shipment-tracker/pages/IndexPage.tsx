@@ -27,11 +27,13 @@ function formatTime(tsMs: number): string {
 }
 
 function EventCard({ event }: { event: any }) {
-  const params = event.params || {};
-  const eventType = event.event_type || 'unknown';
+  // Handle both flat events and events wrapped in a `data` field
+  const ev = event.data && typeof event.data === 'object' ? event.data : event;
+  const params = ev.params || {};
+  const eventType = ev.event_type || ev.type || 'unknown';
   const carrier = params.carrier || '';
   const tracking = params.tracking_number || '';
-  const time = formatTime(event.timestamp_ms);
+  const time = formatTime(ev.timestamp_ms || ev.timestamp);
 
   return (
     <div class="row gap-md items-center p-md bg-raised border round-md" key={event.event_id}>
@@ -82,7 +84,10 @@ export function IndexPage(props: any) {
 
         <div class="stack gap-sm" key="feed">
           {hasEvents
-            ? events.slice().reverse().map((ev: any) => <EventCard event={ev} />)
+            ? events.slice().reverse().map((ev: any) => {
+                if (!ev || typeof ev !== 'object' || (!ev.event_type && !ev.event_id && !ev.data)) return null;
+                return <EventCard event={ev} />;
+              })
             : (
               <div class="text-center p-2xl fg-muted" key="empty">
                 <p class="text-lg" key="wait">Waiting for events...</p>
