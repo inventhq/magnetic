@@ -26,6 +26,8 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 const INPUT_CAP: usize = 16384; // 16 KB shared input buffer
 const SLOT_CAP: usize = 16384;  // 16 KB per snapshot slot
 const CACHE_N: usize = 4;       // 4 prediction cache entries
+const DELTA_RING_CAP: usize = 256;  // max pending deltas per RAF frame
+const DELTA_BUF_CAP: usize = 65536; // 64 KB contiguous delta storage
 
 // ═══════════════════════════════════════════════════════════════════
 // FNV-1a hash — same algorithm as magnetic.js client-side
@@ -97,6 +99,53 @@ fn make_key(state_hash: u32, action_hash: u32) -> u32 {
 // Transport state — all static, zero alloc
 // ═══════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════
+// Delta ring buffer — zero-alloc accumulation for RAF coalescing
+// ═══════════════════════════════════════════════════════════════════
+
+struct DeltaRing {
+    buf: [u8; DELTA_BUF_CAP],    // contiguous byte storage
+    offsets: [u32; DELTA_RING_CAP], // start offset of each delta
+    lengths: [u16; DELTA_RING_CAP], // length of each delta
+    count: u32,                     // number of pending deltas
+    cursor: u32,                    // write cursor in buf
+}
+
+impl DeltaRing {
+    const fn new() -> Self {
+        Self {
+            buf: [0; DELTA_BUF_CAP],
+            offsets: [0; DELTA_RING_CAP],
+            lengths: [0; DELTA_RING_CAP],
+            count: 0,
+            cursor: 0,
+        }
+    }
+
+    fn push(&mut self, data: &[u8]) -> bool {
+        let n = self.count as usize;
+        let c = self.cursor as usize;
+        if n >= DELTA_RING_CAP || c + data.len() > DELTA_BUF_CAP {
+            return false; // full — JS will process without WASM
+        }
+        let mut i = 0;
+        while i < data.len() {
+            self.buf[c + i] = data[i];
+            i += 1;
+        }
+        self.offsets[n] = c as u32;
+        self.lengths[n] = data.len() as u16;
+        self.count = (n + 1) as u32;
+        self.cursor = (c + data.len()) as u32;
+        true
+    }
+
+    fn clear(&mut self) {
+        self.count = 0;
+        self.cursor = 0;
+    }
+}
+
 struct Transport {
     input: [u8; INPUT_CAP],
 
@@ -116,6 +165,9 @@ struct Transport {
     pending_action_hash: u32,
     pending_pre_hash: u32,
     has_pending: bool,
+
+    // Delta ring buffer for RAF coalescing
+    deltas: DeltaRing,
 }
 
 impl Transport {
@@ -134,6 +186,7 @@ impl Transport {
             pending_action_hash: 0,
             pending_pre_hash: 0,
             has_pending: false,
+            deltas: DeltaRing::new(),
         }
     }
 }
@@ -264,4 +317,60 @@ pub extern "C" fn store(snap_len: u32) -> u32 {
         t.result_len = t.current.len;
         1
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Delta ring buffer exports — zero-GC accumulation for RAF coalescing
+// ═══════════════════════════════════════════════════════════════════
+
+/// Push delta bytes from input buffer into ring. Returns count of pending deltas.
+/// Returns 0 if ring is full (JS falls back to direct processing).
+#[no_mangle]
+pub extern "C" fn delta_push(len: u32) -> u32 {
+    unsafe {
+        let t = &mut *G.t.get();
+        if len == 0 || len as usize > INPUT_CAP {
+            return 0;
+        }
+        let data = &t.input[..len as usize];
+        if t.deltas.push(data) {
+            t.deltas.count
+        } else {
+            0 // full — signal JS to process without WASM
+        }
+    }
+}
+
+/// Number of pending deltas in the ring.
+#[no_mangle]
+pub extern "C" fn delta_count() -> u32 {
+    unsafe { (*G.t.get()).deltas.count }
+}
+
+/// Pointer to delta bytes at index `idx` in the ring.
+#[no_mangle]
+pub extern "C" fn delta_ptr(idx: u32) -> *const u8 {
+    unsafe {
+        let t = &*G.t.get();
+        let i = idx as usize;
+        if i >= t.deltas.count as usize { return t.deltas.buf.as_ptr(); }
+        t.deltas.buf.as_ptr().add(t.deltas.offsets[i] as usize)
+    }
+}
+
+/// Length of delta at index `idx`.
+#[no_mangle]
+pub extern "C" fn delta_len(idx: u32) -> u32 {
+    unsafe {
+        let t = &*G.t.get();
+        let i = idx as usize;
+        if i >= t.deltas.count as usize { return 0; }
+        t.deltas.lengths[i] as u32
+    }
+}
+
+/// Clear all pending deltas (call after RAF flush).
+#[no_mangle]
+pub extern "C" fn delta_clear() {
+    unsafe { (*G.t.get()).deltas.clear(); }
 }

@@ -11,6 +11,8 @@
   var deb = {};          // debounce timers
   var lastHash = "";     // hash of last applied snapshot (dedup fallback)
   var enc = new TextEncoder();
+  var deltaQ = [];       // RAF-coalesced delta queue
+  var rafId = 0;         // requestAnimationFrame handle
 
   M.status = function() { return status; };
 
@@ -26,21 +28,20 @@
       try {
         var raw = ev.data;
         var parsed = JSON.parse(raw);
-        // Delta mode: raw event data + client-side render (bypasses V8)
+        // Delta mode: queue for RAF coalescing (bypasses V8)
         if (parsed.delta) {
-          var renderer = M._renderers[parsed.k];
-          if (!renderer) return;
-          var node = renderer(parsed.v);
-          if (!node) return;
-          var target = keys[parsed.t] || root.querySelector('[data-key="' + parsed.t + '"]');
-          if (!target) return;
-          if (!keys[parsed.t]) keys[parsed.t] = target;
-          var el = create(node);
-          target.insertBefore(el, target.firstChild);
-          while (parsed.max > 0 && target.children.length > parsed.max) {
-            var last = target.lastElementChild;
-            if (last) { purgeKeys(last); target.removeChild(last); }
+          // WASM path: store bytes in linear memory (zero GC)
+          if (wasm && wasm.delta_push) {
+            var bytes = enc.encode(raw);
+            if (bytes.length <= 16384) {
+              new Uint8Array(wasm.memory.buffer).set(bytes, wasm.input_ptr());
+              wasm.delta_push(bytes.length);
+            }
+          } else {
+            // Fallback: JS array queue
+            deltaQ.push(parsed);
           }
+          if (!rafId) rafId = requestAnimationFrame(flushDeltas);
           return;
         }
         // Full snapshot mode: WASM dedup + apply
@@ -97,6 +98,53 @@
     }
   }
   M._apply = apply;
+
+  // --- RAF-coalesced delta flush: batch all deltas into a single DOM pass ---
+  var dec = new TextDecoder();
+  function flushDeltas() {
+    rafId = 0;
+    // Collect deltas from WASM ring buffer or JS fallback queue
+    var q;
+    if (wasm && wasm.delta_count && wasm.delta_count() > 0) {
+      q = [];
+      var n = wasm.delta_count();
+      for (var j = 0; j < n; j++) {
+        var ptr = wasm.delta_ptr(j);
+        var len = wasm.delta_len(j);
+        var slice = new Uint8Array(wasm.memory.buffer, ptr, len);
+        try { q.push(JSON.parse(dec.decode(slice))); } catch(e) {}
+      }
+      wasm.delta_clear();
+    } else {
+      q = deltaQ;
+      deltaQ = [];
+    }
+    if (q.length === 0) return;
+    // Group by target key for efficient eviction
+    var targets = {};
+    for (var i = 0; i < q.length; i++) {
+      var dd = q[i];
+      var renderer = M._renderers[dd.k];
+      if (!renderer) continue;
+      var node = renderer(dd.v);
+      if (!node) continue;
+      var target = keys[dd.t] || root.querySelector('[data-key="' + dd.t + '"]');
+      if (!target) continue;
+      if (!keys[dd.t]) keys[dd.t] = target;
+      var el = create(node);
+      target.insertBefore(el, target.firstChild);
+      if (!targets[dd.t]) targets[dd.t] = { el: target, max: dd.max };
+    }
+    // Evict overflow once per target (not per event)
+    for (var tk in targets) {
+      var info = targets[tk];
+      while (info.max > 0 && info.el.children.length > info.max) {
+        var last = info.el.lastElementChild;
+        if (last) { purgeKeys(last); info.el.removeChild(last); }
+        else break;
+      }
+    }
+  }
 
   // Create a brand-new DOM tree from descriptor (first render / new keys)
   function create(n) {
