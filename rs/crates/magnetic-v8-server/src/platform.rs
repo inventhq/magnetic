@@ -188,15 +188,6 @@ fn start_data_threads(app: Arc<AppHandle>) {
     let on_sse_event: Arc<dyn Fn(SseDelta) + Send + Sync> = {
         let app = Arc::clone(&app);
         Arc::new(move |delta: SseDelta| {
-            let sessions: Vec<String> = {
-                let paths = app.session_paths.lock().unwrap();
-                paths.keys().cloned().collect()
-            };
-            if sessions.is_empty() {
-                eprintln!("[delta] no sessions, skipping delta for '{}'", delta.key);
-                return;
-            }
-
             // Delta message sent as regular "message" event with delta flag.
             // Format: {"delta":true,"k":"events","v":{...},"max":20,"t":"feed"}
             let msg = serde_json::json!({
@@ -207,10 +198,19 @@ fn start_data_threads(app: Arc<AppHandle>) {
                 "t": delta.target,
             });
             let msg_bytes = msg.to_string();
-            eprintln!("[delta] sending to {} sessions: {}", sessions.len(), &msg_bytes[..std::cmp::min(200, msg_bytes.len())]);
 
+            // Iterate sse_clients directly — NOT session_paths.
+            // session_paths gets cleaned up on SSE disconnect, but EventSource
+            // auto-reconnects and re-populates sse_clients. Using session_paths
+            // would miss reconnected clients.
             let mut clients = app.sse_clients.lock().unwrap();
-            for session_id in &sessions {
+            if clients.is_empty() {
+                return;
+            }
+            let n_clients: usize = clients.values().map(|v| v.len()).sum();
+            eprintln!("[delta] → {} client(s)", n_clients);
+            let session_ids: Vec<String> = clients.keys().cloned().collect();
+            for session_id in &session_ids {
                 if let Some(list) = clients.get_mut(session_id) {
                     let mut alive = Vec::new();
                     for mut client in list.drain(..) {
@@ -1049,6 +1049,9 @@ fn handle_app_sse(
         let mut clients = app.sse_clients.lock().unwrap();
         clients.entry(session_id.clone()).or_insert_with(Vec::new).push(client);
     }
+    // Re-insert into session_paths — it may have been cleaned up if a previous
+    // SSE connection for this session disconnected.
+    app.session_paths.lock().unwrap().entry(session_id.clone()).or_insert(path.clone());
     eprintln!("[platform:{}] SSE connected (session={}, path={})", app.name, &session_id[..8], path);
 
     loop {

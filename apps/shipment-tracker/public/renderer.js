@@ -10,7 +10,7 @@ Magnetic.registerRenderer("events", function(raw) {
   var ts = ev.timestamp_ms || ev.timestamp;
   var time = "";
   if (ts) {
-    var d = new Date(ts);
+    var d = new Date(typeof ts === "number" && ts > 9999999999 ? ts : ts * 1000);
     time = ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+":"+("0"+d.getSeconds()).slice(-2);
   }
 
