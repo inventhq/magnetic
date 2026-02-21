@@ -215,7 +215,12 @@ pub fn run_platform(args: &[String]) {
         middleware,
     });
 
-    // Load existing apps from data directory
+    // Load existing apps from data directory.
+    // Collect loaded apps first, start data threads AFTER all apps are loaded
+    // and the HTTP server is ready. SSE sources can deliver events immediately,
+    // and the on_change callback blocks on V8 — starting them during load
+    // deadlocks if V8 is still initializing the bundle.
+    let mut loaded_apps: Vec<Arc<AppHandle>> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&data_dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
@@ -226,8 +231,8 @@ pub fn run_platform(args: &[String]) {
                         Ok(handle) => {
                             eprintln!("[platform] Loaded app: {}", name);
                             let app = Arc::new(handle);
-                            start_data_threads(Arc::clone(&app));
-                            platform.apps.write().unwrap().insert(name, app);
+                            platform.apps.write().unwrap().insert(name, Arc::clone(&app));
+                            loaded_apps.push(app);
                         }
                         Err(e) => eprintln!("[platform] Failed to load {}: {}", name, e),
                     }
@@ -252,6 +257,19 @@ pub fn run_platform(args: &[String]) {
     eprintln!("[platform] V8 park idle: {}s", park_idle);
     eprintln!("[platform] Deploy: POST /api/apps/<name>/deploy");
     eprintln!("[platform] Access: GET /apps/<name>/");
+
+    // Start data threads (poll + SSE) AFTER server is listening.
+    // SSE on_change callbacks send to V8 channels which block until V8
+    // finishes initializing the bundle. Starting them earlier deadlocks.
+    if !loaded_apps.is_empty() {
+        let count = loaded_apps.len();
+        thread::spawn(move || {
+            for app in loaded_apps {
+                start_data_threads(app);
+            }
+            eprintln!("[platform] Data threads started for {} app(s)", count);
+        });
+    }
 
     for stream in listener.incoming() {
         let stream = match stream {
@@ -870,12 +888,15 @@ fn handle_deploy(
     match load_app(&name, &platform.data_dir) {
         Ok(handle) => {
             let app = Arc::new(handle);
-            start_data_threads(Arc::clone(&app));
             let mut apps = platform.apps.write().unwrap();
             // Old app handle is dropped, V8 thread will exit when channel closes
-            apps.insert(name.clone(), app);
+            apps.insert(name.clone(), Arc::clone(&app));
             drop(apps);
 
+            // Send the HTTP response BEFORE starting data threads.
+            // SSE sources can deliver events immediately, and the on_change
+            // callback sends to the V8 channel — which blocks if V8 is still
+            // initializing the bundle. That would deadlock the deploy handler.
             let msg = format!(
                 "{{\"ok\":true,\"name\":\"{}\",\"url\":\"/apps/{}/\"}}",
                 name, name
@@ -889,6 +910,9 @@ fn handle_deploy(
             stream.write_all(resp.as_bytes())?;
             stream.write_all(msg.as_bytes())?;
             eprintln!("[platform] ✓ App '{}' deployed at /apps/{}/", name, name);
+
+            // Start data threads (poll + SSE) after response is sent
+            start_data_threads(app);
             Ok(())
         }
         Err(e) => {
