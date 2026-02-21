@@ -19,23 +19,16 @@
 }
 
 # Control plane API
+# NOTE: no `encode` here — gzip/zstd on this route caused reqwest to
+# hang on 2nd+ deploy POSTs (Caddy buffered the compressed response
+# while the control plane's outgoing connection to the platform timed out).
 api.fujs.dev {
-	encode gzip zstd
-	reverse_proxy localhost:4000 {
-		transport http {
-			keepalive off
-		}
-	}
+	reverse_proxy localhost:4000
 }
 
 # Platform homepage / marketing site
 fujs.dev {
-	encode gzip zstd
-	reverse_proxy localhost:4000 {
-		transport http {
-			keepalive off
-		}
-	}
+	reverse_proxy localhost:4000
 }
 
 # Wildcard: all app subdomains
