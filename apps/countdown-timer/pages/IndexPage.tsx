@@ -1,5 +1,5 @@
-export function IndexPage({ state }: { state: any }) {
-  const { targetLabel, days, hours, minutes, seconds, isComplete } = state;
+export function IndexPage(props: any) {
+  const { targetLabel, days, hours, minutes, seconds, isComplete } = props;
 
   return (
     <div class="min-h-screen bg-surface stack items-center justify-center gap-2xl p-xl">

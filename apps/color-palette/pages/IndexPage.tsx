@@ -1,5 +1,5 @@
-export function IndexPage({ state }: { state: any }) {
-  const { palettes, totalColors } = state;
+export function IndexPage(props: any) {
+  const { palettes, totalColors } = props;
 
   return (
     <div class="min-h-screen bg-surface p-xl">

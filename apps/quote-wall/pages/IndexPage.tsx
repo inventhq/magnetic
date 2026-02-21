@@ -1,5 +1,5 @@
-export function IndexPage({ state }: { state: any }) {
-  const { quotes, total } = state;
+export function IndexPage(props: any) {
+  const { quotes, total } = props;
 
   return (
     <div class="min-h-screen bg-surface p-xl">
