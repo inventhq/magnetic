@@ -36,7 +36,7 @@ async fn main() {
     let http = reqwest::Client::builder()
         .user_agent(format!("magnetic-control-plane/{}", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(30))
-        .pool_max_idle_per_host(10)
+        .pool_max_idle_per_host(0)
         .build()
         .expect("failed to build HTTP client");
 
