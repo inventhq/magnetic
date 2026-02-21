@@ -312,8 +312,10 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
                                 json: data_json,
                                 reply: reply.clone(),
                             });
-                            let _ = reply.recv();
-                            eprintln!("[platform:{}] injected {} data sources", name, fetched);
+                            match reply.recv_timeout(std::time::Duration::from_secs(10)) {
+                                V8Result::Err(e) => eprintln!("[platform:{}] setData failed: {}", name, e),
+                                _ => eprintln!("[platform:{}] injected {} data sources", name, fetched),
+                            }
                         }
                         data_ctx = Some(ctx);
                     }

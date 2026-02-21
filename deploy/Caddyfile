@@ -21,13 +21,21 @@
 # Control plane API
 api.fujs.dev {
 	encode gzip zstd
-	reverse_proxy localhost:4000
+	reverse_proxy localhost:4000 {
+		transport http {
+			keepalive off
+		}
+	}
 }
 
 # Platform homepage / marketing site
 fujs.dev {
 	encode gzip zstd
-	reverse_proxy localhost:4000
+	reverse_proxy localhost:4000 {
+		transport http {
+			keepalive off
+		}
+	}
 }
 
 # Wildcard: all app subdomains

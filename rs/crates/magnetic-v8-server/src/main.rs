@@ -360,6 +360,25 @@ impl Reply {
         }
         guard.take().unwrap()
     }
+
+    /// recv with a timeout — returns Err if the V8 thread doesn't respond in time.
+    /// Prevents hanging the main thread if the V8 thread is dead.
+    pub fn recv_timeout(&self, duration: std::time::Duration) -> V8Result {
+        let mut guard = self.data.lock().unwrap();
+        let deadline = std::time::Instant::now() + duration;
+        while guard.is_none() {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return V8Result::Err("V8 thread did not respond (timeout)".into());
+            }
+            let (g, timeout_result) = self.ready.wait_timeout(guard, remaining).unwrap();
+            guard = g;
+            if timeout_result.timed_out() && guard.is_none() {
+                return V8Result::Err("V8 thread did not respond (timeout)".into());
+            }
+        }
+        guard.take().unwrap()
+    }
 }
 
 /// Initialize V8's global platform exactly once per process.
@@ -380,6 +399,7 @@ pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
     let mut isolate = v8::Isolate::new(v8::CreateParams::default());
 
     let global_context;
+    let mut init_error: Option<String> = None;
     {
         let handle_scope = &mut v8::HandleScope::new(&mut isolate);
         let context = v8::Context::new(handle_scope, Default::default());
@@ -387,9 +407,40 @@ pub fn v8_thread(js_source: String, rx: mpsc::Receiver<V8Request>) {
         let scope = &mut v8::ContextScope::new(handle_scope, context);
 
         let code = v8::String::new(scope, &js_source).unwrap();
-        let script = v8::Script::compile(scope, code, None)
-            .expect("Failed to compile JS bundle");
-        script.run(scope).expect("Failed to execute JS bundle");
+        match v8::Script::compile(scope, code, None) {
+            Some(script) => {
+                if script.run(scope).is_none() {
+                    init_error = Some("JS bundle threw during execution".into());
+                }
+            }
+            None => {
+                init_error = Some("Failed to compile JS bundle".into());
+            }
+        }
+    }
+
+    if let Some(ref err) = init_error {
+        eprintln!("[magnetic-v8] ⚠ bundle init failed: {}", err);
+        // Stay alive to drain requests with error responses so callers don't hang
+        for req in rx {
+            let err_msg = format!("V8 bundle failed to initialize: {}", err);
+            match req {
+                V8Request::Render { reply, .. }
+                | V8Request::SetData { reply, .. }
+                | V8Request::RenderWithData { reply, .. }
+                | V8Request::RenderWithCSS { reply, .. }
+                | V8Request::RenderWithDataAndCSS { reply, .. }
+                | V8Request::ApiCall { reply, .. }
+                | V8Request::CleanupSessions { reply, .. } => {
+                    reply.send(V8Result::Err(err_msg));
+                }
+                V8Request::Reduce { reply, .. } => {
+                    reply.send(V8Result::Err(err_msg));
+                }
+                V8Request::DropSession { .. } => {}
+            }
+        }
+        return;
     }
 
     eprintln!("[magnetic-v8] V8 runtime initialized");
