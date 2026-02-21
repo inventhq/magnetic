@@ -101,7 +101,7 @@ export function generateAllCSS(config: DesignConfig): string {
   const themeCSS = compileTheme(config);
   const resetCSS = generateReset();
   const utilities = generateUtilities(config);
-  const breakpoints = config.theme.breakpoints;
+  const breakpoints = config.theme.breakpoints || {};
 
   const containerRules = containerMediaRules(breakpoints);
 
@@ -148,7 +148,7 @@ export function createExtractor(
   const themeCSS = compileTheme(config);
   const resetCSS = generateReset();
   const utilities = generateUtilities(config);
-  const breakpoints = config.theme.breakpoints;
+  const breakpoints = config.theme.breakpoints || {};
   const breakpointNames = new Set(Object.keys(breakpoints));
 
   // Sort breakpoints by min-width ascending for mobile-first ordering

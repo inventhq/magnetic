@@ -43,7 +43,7 @@ function fluidSize(minRem: number, maxRem: number): string {
  */
 export function generateUtilities(config: DesignConfig): UtilityMap {
   const map: UtilityMap = new Map();
-  const { colors, spacing, radius, typography, shadows, breakpoints } = config.theme;
+  const { colors, spacing, radius, typography, shadows, breakpoints = {} } = config.theme;
 
   // -----------------------------------------------------------------------
   // Layout primitives
