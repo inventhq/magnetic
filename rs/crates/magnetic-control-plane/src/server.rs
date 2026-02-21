@@ -360,10 +360,14 @@ async fn deploy(
 
     let url = format!("https://{}.{}", app_id, state.domain);
 
-    // Update Caddy routes
-    if let Some(app) = state.db.get_app(&app_id).await? {
-        let _ = state.caddy.add_app(&app, &node, &state.db).await;
-    }
+    // NOTE: Caddy config push disabled. The Caddyfile already handles all
+    // subdomain routing via *.fujs.dev wildcard with DNS-challenge TLS,
+    // gzip/zstd compression, and SSE flush_interval. The dynamic config
+    // push was replacing the entire Caddyfile, wiping wildcard TLS and
+    // triggering per-domain cert issuance that blocked subsequent deploys.
+    // if let Some(app) = state.db.get_app(&app_id).await? {
+    //     let _ = state.caddy.add_app(&app, &node, &state.db).await;
+    // }
 
     eprintln!(
         "[deploy] {} app '{}' (id={}) on node {} → {}",
@@ -452,8 +456,8 @@ async fn delete_app(
     state.db.delete_app(&id).await?;
     state.db.decrement_node_app_count(&app.node_id).await?;
 
-    // Update Caddy
-    let _ = state.caddy.remove_app(&state.db).await;
+    // NOTE: Caddy config push disabled (see deploy handler comment).
+    // let _ = state.caddy.remove_app(&state.db).await;
 
     eprintln!("[apps] deleted app {} (node={})", id, app.node_id);
     Ok(StatusCode::NO_CONTENT)
