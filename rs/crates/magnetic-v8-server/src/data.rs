@@ -245,6 +245,9 @@ pub fn fetch_page_data_with_token(ctx: &DataContext, path: &str, auth_token: Opt
 
     let mut count = 0;
     for source in &sources {
+        // SSE sources are handled by start_sse_threads, not regular fetch.
+        // Attempting to HTTP GET an SSE endpoint blocks forever (stream never ends).
+        if source.source_type == "sse" { continue; }
         match fetch_data_source(&source, auth_token) {
             Ok(value) => {
                 ctx.set_value(&source.key, value);
@@ -280,6 +283,8 @@ pub fn fetch_page_data_streaming(
     let mut handles: Vec<(DataSourceConfig, std::sync::mpsc::Receiver<Result<serde_json::Value, String>>)> = Vec::new();
 
     for source in &sources {
+        // SSE sources are handled by start_sse_threads, not regular fetch.
+        if source.source_type == "sse" { continue; }
         let timeout = source.timeout.as_ref().map(|t| parse_duration(t));
         if let Some(dur) = timeout {
             if !dur.is_zero() {
