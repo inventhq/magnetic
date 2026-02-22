@@ -10,6 +10,8 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import java.io.IOException
+import java.net.CookieManager
+import java.net.CookiePolicy
 import java.util.concurrent.TimeUnit
 
 /**
@@ -37,7 +39,13 @@ class MagneticClient(
     private val serverUrl: String,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
 ) {
+    // Session cookie jar — persists magnetic_sid across SSE reconnects + action POSTs
+    private val cookieJar: CookieJar = JavaNetCookieJar(
+        CookieManager().apply { setCookiePolicy(CookiePolicy.ACCEPT_ALL) }
+    )
+
     private val httpClient = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS)     // SSE = infinite read
         .writeTimeout(10, TimeUnit.SECONDS)

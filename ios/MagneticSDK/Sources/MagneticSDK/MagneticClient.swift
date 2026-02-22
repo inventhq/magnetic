@@ -34,6 +34,7 @@ public final class MagneticClient: ObservableObject {
     @Published public private(set) var lastError: String?
 
     private let baseURL: String
+    private let cookieStorage: HTTPCookieStorage
     private var actionSession: URLSession
     private var sseDelegate: SSESessionDelegate?
     private var sseSession: URLSession?
@@ -45,7 +46,13 @@ public final class MagneticClient: ObservableObject {
             ? String(serverURL.dropLast())
             : serverURL
 
-        self.actionSession = URLSession.shared
+        // Shared cookie storage — persists magnetic_sid across SSE reconnects + action POSTs
+        self.cookieStorage = HTTPCookieStorage.shared
+        let actionConfig = URLSessionConfiguration.default
+        actionConfig.httpCookieStorage = cookieStorage
+        actionConfig.httpCookieAcceptPolicy = .always
+        actionConfig.httpShouldSetCookies = true
+        self.actionSession = URLSession(configuration: actionConfig)
     }
 
     // MARK: - SSE Connection
@@ -91,6 +98,9 @@ public final class MagneticClient: ObservableObject {
         self.sseDelegate = delegate
 
         let config = URLSessionConfiguration.default
+        config.httpCookieStorage = cookieStorage
+        config.httpCookieAcceptPolicy = .always
+        config.httpShouldSetCookies = true
         config.timeoutIntervalForRequest = .infinity
         config.timeoutIntervalForResource = .infinity
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
