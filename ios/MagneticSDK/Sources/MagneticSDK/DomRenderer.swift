@@ -242,6 +242,7 @@ struct InputFieldView: View {
     let onAction: (String, [String: String]) -> Void
 
     @State private var text: String = ""
+    @State private var debounceTask: Task<Void, Never>?
 
     private var name: String { node.attr("name") ?? "input" }
     private var placeholder: String { node.attr("placeholder") ?? "" }
@@ -264,8 +265,14 @@ struct InputFieldView: View {
         .textFieldStyle(.roundedBorder)
         .padding(.vertical, 4)
         .onChange(of: text) { _, newValue in
+            // Debounce input actions — fire 300ms after last keystroke (matches web runtime)
+            debounceTask?.cancel()
             if let action = inputAction {
-                onAction(action, ["value": newValue])
+                debounceTask = Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    guard !Task.isCancelled else { return }
+                    onAction(action, ["value": newValue])
+                }
             }
         }
         .onAppear {

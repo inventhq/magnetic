@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -125,14 +126,17 @@ private fun RenderInput(
 
     var text by remember(node.key ?: name) { mutableStateOf(value) }
 
+    // Debounce input actions — fire 300ms after last keystroke (matches web runtime)
+    if (inputAction != null) {
+        LaunchedEffect(text) {
+            delay(300)
+            onAction(inputAction, mapOf("value" to text))
+        }
+    }
+
     OutlinedTextField(
         value = text,
-        onValueChange = { newValue ->
-            text = newValue
-            if (inputAction != null) {
-                onAction(inputAction, mapOf("value" to newValue))
-            }
-        },
+        onValueChange = { newValue -> text = newValue },
         placeholder = { Text(placeholder) },
         visualTransformation = if (type == "password") {
             PasswordVisualTransformation()
