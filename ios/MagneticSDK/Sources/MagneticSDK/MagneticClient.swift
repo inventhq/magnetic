@@ -171,11 +171,13 @@ public final class MagneticClient: ObservableObject {
 
         Task {
             do {
-                let (_, response) = try await actionSession.data(for: request)
+                let (data, response) = try await actionSession.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     await MainActor.run {
                         self.lastError = "Action failed (\(http.statusCode))"
                     }
+                } else {
+                    applyResponseSnapshot(data)
                 }
             } catch {
                 await MainActor.run {
@@ -201,17 +203,29 @@ public final class MagneticClient: ObservableObject {
 
         Task {
             do {
-                let (_, response) = try await actionSession.data(for: request)
+                let (data, response) = try await actionSession.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     await MainActor.run {
                         self.lastError = "Navigate failed (\(http.statusCode))"
                     }
+                } else {
+                    applyResponseSnapshot(data)
                 }
             } catch {
                 await MainActor.run {
                     self.lastError = "Navigate error: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    /// Parse action/navigate response body and apply as DOM snapshot for instant feedback.
+    private func applyResponseSnapshot(_ data: Data) {
+        Task { @MainActor in
+            do {
+                let snapshot = try parseSnapshot(data)
+                self.dom = snapshot.root
+            } catch { /* SSE will deliver the next snapshot */ }
         }
     }
 

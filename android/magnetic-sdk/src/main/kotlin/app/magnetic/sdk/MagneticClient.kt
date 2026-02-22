@@ -199,6 +199,8 @@ class MagneticClient(
                 httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         _error.emit("Action failed (${response.code}): ${response.body?.string()}")
+                    } else {
+                        applyResponseSnapshot(response)
                     }
                 }
             } catch (e: IOException) {
@@ -216,7 +218,7 @@ class MagneticClient(
     fun navigate(path: String) {
         scope.launch {
             try {
-                val body = "{\"path\":\"${path.replace("\"", "\\\"")}\"}"
+                val body = "{\"path\":\"${path.replace("\"", "\\\"")}\"}"}
                     .toRequestBody("application/json".toMediaType())
                 val request = Request.Builder()
                     .url("$baseUrl/actions/navigate")
@@ -226,12 +228,25 @@ class MagneticClient(
                 httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         _error.emit("Navigate failed (${response.code})")
+                    } else {
+                        applyResponseSnapshot(response)
                     }
                 }
             } catch (e: IOException) {
                 _error.emit("Navigate error: ${e.message}")
             }
         }
+    }
+
+    /** Parse action/navigate response body and apply as DOM snapshot for instant feedback. */
+    private fun applyResponseSnapshot(response: Response) {
+        try {
+            val body = response.body?.string() ?: return
+            val snapshot = magneticJson.parseToJsonElement(body)
+            val rootElement = snapshot.jsonObject["root"] ?: return
+            val node = magneticJson.decodeFromJsonElement(DomNode.serializer(), rootElement)
+            _dom.value = node
+        } catch (_: Exception) { /* SSE will deliver the next snapshot */ }
     }
 
     /** Clean up resources. Call when the hosting Activity/Fragment is destroyed. */

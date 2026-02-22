@@ -67,3 +67,8 @@ func parseSnapshot(_ json: String) throws -> Snapshot {
     let data = Data(json.utf8)
     return try magneticDecoder.decode(Snapshot.self, from: data)
 }
+
+/// Parse a Snapshot (root wrapper) from raw Data.
+func parseSnapshot(_ data: Data) throws -> Snapshot {
+    return try magneticDecoder.decode(Snapshot.self, from: data)
+}
