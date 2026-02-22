@@ -624,6 +624,103 @@ pub fn start_sse_threads(
     }
 }
 
+/// Start background WebSocket client threads for data sources with type "ws".
+/// Each thread opens a persistent WebSocket connection, parses incoming messages
+/// as JSON, updates the DataContext, and calls on_change() when new data arrives.
+/// Auto-reconnects on disconnect with exponential backoff (1s → 30s cap).
+///
+/// Uses the same buffer/dedup semantics as SSE:
+/// - buffer > 0: accumulate last N events in a JSON array (ring buffer with event_id dedup)
+/// - buffer == 0: each message replaces the previous value
+pub fn start_ws_threads(
+    ctx: Arc<DataContext>,
+    on_change: Arc<dyn Fn() + Send + Sync>,
+) {
+    for source in &ctx.config.data {
+        if source.source_type != "ws" {
+            continue;
+        }
+
+        let source = source.clone();
+        let ctx = Arc::clone(&ctx);
+        let on_change = Arc::clone(&on_change);
+
+        thread::spawn(move || {
+            let url = resolve_env_vars(&source.url);
+            let buffer_size = source.buffer;
+            let mut backoff_ms: u64 = 1000;
+            let mut ring: std::collections::VecDeque<serde_json::Value> =
+                std::collections::VecDeque::with_capacity(if buffer_size > 0 { buffer_size } else { 0 });
+
+            loop {
+                eprintln!("[data:ws] connecting '{}' → {}", source.key, url);
+
+                match tungstenite::connect(&url) {
+                    Ok((mut socket, _response)) => {
+                        backoff_ms = 1000;
+                        eprintln!("[data:ws] connected '{}' (buffer={})", source.key, buffer_size);
+
+                        loop {
+                            match socket.read() {
+                                Ok(tungstenite::Message::Text(text)) => {
+                                    let value = match serde_json::from_str::<serde_json::Value>(&text) {
+                                        Ok(v) => v,
+                                        Err(_) => serde_json::Value::String(text.to_string()),
+                                    };
+
+                                    if buffer_size > 0 {
+                                        // Dedup by event_id
+                                        let eid = value.get("event_id")
+                                            .or_else(|| value.get("data").and_then(|d| d.get("event_id")));
+                                        let is_dup = if let Some(id) = eid {
+                                            ring.iter().any(|v| {
+                                                v.get("event_id").or_else(|| v.get("data").and_then(|d| d.get("event_id"))) == Some(id)
+                                            })
+                                        } else { false };
+
+                                        if is_dup { continue; }
+
+                                        if ring.len() >= buffer_size {
+                                            ring.pop_front();
+                                        }
+                                        ring.push_back(value.clone());
+                                        let arr = serde_json::Value::Array(ring.iter().cloned().collect());
+                                        ctx.set_value(&source.key, arr);
+                                    } else {
+                                        ctx.set_value(&source.key, value);
+                                    }
+
+                                    on_change();
+                                }
+                                Ok(tungstenite::Message::Close(_)) => {
+                                    eprintln!("[data:ws] server closed '{}'", source.key);
+                                    break;
+                                }
+                                Ok(tungstenite::Message::Ping(data)) => {
+                                    let _ = socket.send(tungstenite::Message::Pong(data));
+                                }
+                                Ok(_) => {} // Binary, Pong, Frame — ignore
+                                Err(e) => {
+                                    eprintln!("[data:ws] read error '{}': {}", source.key, e);
+                                    break;
+                                }
+                            }
+                        }
+                        eprintln!("[data:ws] disconnected '{}'", source.key);
+                    }
+                    Err(e) => {
+                        eprintln!("[data:ws] connect error '{}': {}", source.key, e);
+                    }
+                }
+
+                eprintln!("[data:ws] reconnecting '{}' in {}ms", source.key, backoff_ms);
+                thread::sleep(Duration::from_millis(backoff_ms));
+                backoff_ms = (backoff_ms * 2).min(30000);
+            }
+        });
+    }
+}
+
 /// Parse a duration string like "5s", "10s", "1m", "500ms".
 fn parse_duration(s: &str) -> Duration {
     let s = s.trim();

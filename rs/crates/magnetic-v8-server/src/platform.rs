@@ -29,7 +29,7 @@ use crate::{
     cors_middleware, rate_limit_middleware, logger_middleware,
     build_assets, find_arg, serve_embedded,
 };
-use crate::data::{DataContext, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, start_sse_threads, fetch_data_source};
+use crate::data::{DataContext, parse_config, fetch_page_data, fetch_page_data_with_token, fetch_page_data_streaming, forward_action, start_poll_threads, start_sse_threads, start_ws_threads, fetch_data_source};
 use crate::auth::AuthMiddleware;
 
 // ── Idle timeout for V8 parking ──────────────────────────────────────
@@ -111,7 +111,8 @@ fn start_data_threads(app: Arc<AppHandle>) {
 
     let has_poll = ctx.config.data.iter().any(|d| d.source_type == "poll");
     let has_sse = ctx.config.data.iter().any(|d| d.source_type == "sse");
-    if !has_poll && !has_sse {
+    let has_ws = ctx.config.data.iter().any(|d| d.source_type == "ws");
+    if !has_poll && !has_sse && !has_ws {
         return;
     }
 
@@ -187,7 +188,10 @@ fn start_data_threads(app: Arc<AppHandle>) {
         start_poll_threads(Arc::clone(&ctx), Arc::clone(&on_change));
     }
     if has_sse {
-        start_sse_threads(Arc::clone(&ctx), on_change);
+        start_sse_threads(Arc::clone(&ctx), Arc::clone(&on_change));
+    }
+    if has_ws {
+        start_ws_threads(Arc::clone(&ctx), on_change);
     }
 }
 
