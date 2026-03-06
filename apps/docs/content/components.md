@@ -507,6 +507,6 @@ Components only need to import from `@magneticjs/server/jsx-runtime`. The CSS fr
 
 ## Reference
 
-- [App Development Reference](https://docs.magnetic.dev/app-development) — Pages, state, actions, data sources
-- [CSS & Styling](https://docs.magnetic.dev/css) — Design tokens, utility classes, custom CSS
+- [App Development Reference](/app-development) — Pages, state, actions, data sources
+- [CSS & Styling](/css-styling) — Design tokens, utility classes, custom CSS
 - [GitHub: Example apps](https://github.com/inventhq/magnetic/tree/main/apps) — Real app examples

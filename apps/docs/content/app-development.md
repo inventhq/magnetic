@@ -665,9 +665,15 @@ Supported providers: `oidc`, `oauth2`, `magic-link`, `otp`. Use `${env.VAR}` for
 ```bash
 # Build only (outputs dist/app.js)
 magnetic build --dir apps/my-app
+
+# Deploy SSR app (full server rendering, actions, SSE)
 magnetic push --dir apps/my-app --name my-app --server https://api.fujs.dev
 
-One command. No Docker, no CI pipeline. The platform hot-swaps the V8 isolate.
+# Deploy SSG static site (pre-rendered HTML, zero JS)
+magnetic push --static --dir apps/my-app
+```
+
+One command. No Docker, no CI pipeline. SSR deploys hot-swap the V8 isolate. SSG deploys write static files — no V8 needed.
 
 ## Complete Example: Task Board
 

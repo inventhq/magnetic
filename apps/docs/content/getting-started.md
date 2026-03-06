@@ -351,14 +351,19 @@ Nested layouts: `pages/dashboard/layout.tsx` wraps only `/dashboard/*` routes.
 |---------|-------------|
 | `magnetic dev` | Watch + rebuild + local server on port 3003 |
 | `magnetic build` | Generate production bundle |
-| `magnetic push` | Build + deploy to Magnetic platform |
+| `magnetic build --static` | Pre-render all routes to static HTML |
+| `magnetic push` | Build + deploy SSR app to Magnetic platform |
+| `magnetic push --static` | Build SSG + deploy static site to Magnetic platform |
 | `magnetic openapi` | Auto-discover APIs + generate TypeScript types |
 
 ## Deployment
 
 ```bash
-# One command to deploy
+# Deploy SSR app (full server rendering, actions, SSE)
 magnetic push --name my-app --server https://api.fujs.dev
+
+# Deploy SSG static site (pre-rendered HTML, zero JS)
+magnetic push --static --name my-app --server https://api.fujs.dev
 ```
 
 Your app gets a subdomain: `https://my-app.fujs.dev`
@@ -415,10 +420,11 @@ import { Head, Link } from '@magneticjs/server/jsx-runtime';
 
 ## Further Reading
 
-- [App Development Reference](https://docs.magnetic.dev/app-development) — Pages, state, actions, data sources, auth, deployment
-- [Component Patterns](https://docs.magnetic.dev/components) — Building reusable components
-- [CSS & Styling](https://docs.magnetic.dev/css) — Design tokens, utility classes, custom CSS
-- [Benchmarks](https://docs.magnetic.dev/benchmarks) — Performance measurements vs other frameworks
+- [App Development Reference](/app-development) — Pages, state, actions, data sources, auth, deployment
+- [Component Patterns](/components) — Building reusable components
+- [CSS & Styling](/css-styling) — Design tokens, utility classes, custom CSS
+- [Benchmarks](/benchmarks) — Performance measurements vs other frameworks
+- [Static Site Generation](/static-site-generation) — SSG, lazy content, deployment
 - [npm: @magneticjs/cli](https://www.npmjs.com/package/@magneticjs/cli) — CLI package
 - [npm: @magneticjs/server](https://www.npmjs.com/package/@magneticjs/server) — JSX runtime
 - [GitHub](https://github.com/inventhq/magnetic) — Source code

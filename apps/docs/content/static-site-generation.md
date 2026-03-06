@@ -7,7 +7,7 @@ order: 6
 
 # Static Site Generation (SSG)
 
-Magnetic can pre-render your pages to **pure static HTML** at build time. No JavaScript, no SSE, no server required. The output is deployable to any static host — Netlify, Cloudflare Pages, GitHub Pages, S3, or a plain nginx server.
+Magnetic can pre-render your pages to **pure static HTML** at build time. No JavaScript, no SSE, no server required. Deploy to the Magnetic platform with `magnetic push --static`, or to any static host — Netlify, Cloudflare Pages, GitHub Pages, S3, or a plain nginx server.
 
 ## When to Use SSG
 
@@ -120,7 +120,18 @@ The key advantage: **adding a new `.md` file requires zero rebuild** in lazy mod
 
 ## Deploying Static Sites
 
-The `dist/` directory is ready to deploy:
+### Deploy to Magnetic Platform
+
+```bash
+# Build SSG + deploy in one command
+magnetic push --static
+```
+
+This pre-renders all routes, collects the HTML + CSS + public assets, and deploys to the Magnetic platform as a static site. The platform serves files directly — no V8 isolate, no SSE, just fast static file serving with proper content-type headers and caching.
+
+### Deploy to External Hosts
+
+The `dist/` directory is also deployable to any static host:
 
 ```bash
 # Netlify
@@ -136,9 +147,23 @@ npx wrangler pages deploy dist
 npx http-server dist -p 3000
 ```
 
-## Mixing SSR and SSG
+## Navigation in SSG vs SSR
 
-An app can use SSG for content pages and SSR for interactive pages. The `content/` folder is the single source of truth — same markdown files, same `getContent()`/`listContent()` API, same page components. The difference is only in the output:
+In **SSR mode**, the `<Link>` component renders `<a onClick="navigate:/path">` — the client runtime intercepts clicks, does `pushState`, and fetches the new page from the server without a full reload.
 
-- **SSR**: Content baked into V8 bundle, rendered per-request with SSE for live updates
-- **SSG**: Content rendered once at build time to static HTML files
+In **SSG mode**, there is no client runtime. Navigation links are plain `<a href="/path">` — standard browser navigation. Each click loads a new static HTML file. This is why SSG pages ship zero JavaScript.
+
+Your page components work identically in both modes. The `href` attribute on `<Link>` and `<a>` is what matters for SSG.
+
+## SSR vs SSG — Choose One Per Deployment
+
+An app is deployed as **either SSR or SSG** — not both at the same time. They are different deployment targets for the same source code:
+
+| Command | Output | Server | Interactivity |
+|---------|--------|--------|---------------|
+| `magnetic push` | V8 bundle | Required (magnetic-v8-server) | Full — actions, SSE, real-time data |
+| `magnetic push --static` | Static HTML files | Not required | None — pure HTML, zero JS |
+
+If you need *some pages* interactive and *some pages* static, **deploy as SSR**. The V8 server can render any page, and SSR is a superset of SSG. The only reason to choose SSG is when you want zero server cost for content-only sites like docs or blogs.
+
+The `content/` folder is the single source of truth in both modes — same markdown files, same `getContent()`/`listContent()` API, same page components. Only the output differs.
