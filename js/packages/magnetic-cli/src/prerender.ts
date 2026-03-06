@@ -31,7 +31,7 @@ export interface PrerenderOptions {
  * Loads the IIFE bundle in a Node VM context, calls MagneticApp.render(path)
  * for each route, and converts the DomNode to HTML.
  */
-export async function prerenderRoutes(opts: PrerenderOptions): Promise<number> {
+export async function prerenderRoutes(opts: PrerenderOptions): Promise<{ count: number; pages: Record<string, string> }> {
   const { bundlePath, outDir, routes, title, inlineCSS, publicDir, contentDir, log } = opts;
 
   // Load the built bundle
@@ -71,7 +71,7 @@ export async function prerenderRoutes(opts: PrerenderOptions): Promise<number> {
   const app = (context as any).globalThis.__MA || (context as any).__MA;
   if (!app || typeof app.render !== 'function') {
     if (log) log('error', 'Bundle does not export render() — cannot prerender');
-    return 0;
+    return { count: 0, pages: {} };
   }
 
   // Read inline CSS from public/style.css if available
@@ -84,6 +84,7 @@ export async function prerenderRoutes(opts: PrerenderOptions): Promise<number> {
   }
 
   let count = 0;
+  const pages: Record<string, string> = {};
 
   for (const route of routes) {
     try {
@@ -148,6 +149,7 @@ ${headHTML}
 
       mkdirSync(dirname(outPath), { recursive: true });
       writeFileSync(outPath, html, 'utf-8');
+      pages[route] = html;
 
       if (log) log('debug', `  prerendered ${route} → ${outPath} (${(html.length / 1024).toFixed(1)}KB)`);
       count++;
@@ -156,7 +158,7 @@ ${headHTML}
     }
   }
 
-  return count;
+  return { count, pages };
 }
 
 // ── Minimal DomNode → HTML renderer (runs in CLI, not in V8) ────────

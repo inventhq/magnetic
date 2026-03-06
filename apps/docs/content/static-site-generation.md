@@ -155,15 +155,65 @@ In **SSG mode**, there is no client runtime. Navigation links are plain `<a href
 
 Your page components work identically in both modes. The `href` attribute on `<Link>` and `<a>` is what matters for SSG.
 
-## SSR vs SSG — Choose One Per Deployment
+## Hybrid Mode — SSR + Pre-rendered Pages
 
-An app is deployed as **either SSR or SSG** — not both at the same time. They are different deployment targets for the same source code:
+For apps that mix dynamic and static content (e.g., a news site with live dashboards AND thousands of blog posts), you can **pre-render specific routes** while keeping the rest fully dynamic.
 
-| Command | Output | Server | Interactivity |
-|---------|--------|--------|---------------|
-| `magnetic push` | V8 bundle | Required (magnetic-v8-server) | Full — actions, SSE, real-time data |
-| `magnetic push --static` | Static HTML files | Not required | None — pure HTML, zero JS |
+Add a `prerender` array to `magnetic.json`:
 
-If you need *some pages* interactive and *some pages* static, **deploy as SSR**. The V8 server can render any page, and SSR is a superset of SSG. The only reason to choose SSG is when you want zero server cost for content-only sites like docs or blogs.
+```json
+{
+  "name": "my-news-site",
+  "prerender": ["/", "/about", "/blog/*"]
+}
+```
 
-The `content/` folder is the single source of truth in both modes — same markdown files, same `getContent()`/`listContent()` API, same page components. Only the output differs.
+When you run `magnetic push`, the CLI:
+1. Builds the SSR bundle as normal
+2. Pre-renders the listed routes to static HTML
+3. Sends both the bundle AND the pre-rendered pages to the platform
+
+The platform server checks for a pre-rendered file **before** hitting V8. If a pre-rendered file exists, it serves it instantly (no V8 compute). If not, V8 renders on demand as usual.
+
+### Glob Patterns
+
+Use `/*` to pre-render all content under a prefix:
+
+| Pattern | Expands to |
+|---------|-----------|
+| `"/"` | Just the homepage |
+| `"/about"` | Single route |
+| `"/blog/*"` | All content slugs under `blog/` |
+| `"/docs/*"` | All content slugs under `docs/` |
+
+### When to Use Hybrid vs Pure SSG
+
+| Mode | Command | Use case |
+|------|---------|----------|
+| **Pure SSR** | `magnetic push` | All pages dynamic, no pre-rendering |
+| **Hybrid** | `magnetic push` + `prerender` in config | Mix of static content + live interactive pages |
+| **Pure SSG** | `magnetic push --static` | All pages static, zero JS, no server needed |
+
+Hybrid mode gives you the best of both worlds: blog posts and documentation pages serve instantly from disk, while dashboards, user settings, and live feeds render through V8 with full interactivity.
+
+### Example: News Site
+
+```json
+{
+  "name": "my-news-site",
+  "server": "http://localhost:3003",
+  "prerender": ["/", "/about", "/articles/*", "/categories/*"],
+  "data": {
+    "live-feed": {
+      "url": "https://api.example.com/live",
+      "type": "sse",
+      "page": "/live"
+    }
+  }
+}
+```
+
+- `/`, `/about`, `/articles/*`, `/categories/*` → served as static HTML (instant)
+- `/live` → rendered by V8 with real-time SSE updates (dynamic)
+
+The `content/` folder is the single source of truth in all modes — same markdown files, same `getContent()`/`listContent()` API, same page components. Only the serving behavior differs.

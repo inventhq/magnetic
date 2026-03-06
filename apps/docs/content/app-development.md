@@ -617,16 +617,16 @@ Data sources are fetched server-side and injected as props:
 - **`refresh`**: Polling interval (e.g., `"5s"`, `"10s"`) — automatically re-fetches and pushes updates via SSE
 - **Source types**: `fetch` (default one-time), `poll` (periodic via `refresh`), `sse` (server-sent events), `ws` (WebSocket)
 
-### With Prerender (SSG)
+### With Prerender (Hybrid SSR + SSG)
 
 ```json
 {
   "name": "my-app",
-  "prerender": ["/", "/about"]
+  "prerender": ["/", "/about", "/blog/*"]
 }
 ```
 
-Routes listed in `prerender` are rendered to static HTML at build time. Good for pages that don't need dynamic state.
+Routes listed in `prerender` are pre-rendered to static HTML at deploy time and served directly from disk — no V8 compute. All other routes render through V8 as normal. Use `/*` globs to pre-render all content under a prefix (e.g., `"/blog/*"` pre-renders every blog post). Great for sites mixing static content with live interactive pages.
 
 ### With Actions (API forwarding)
 

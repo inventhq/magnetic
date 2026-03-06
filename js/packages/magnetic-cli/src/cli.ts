@@ -215,7 +215,7 @@ async function main() {
       if (prerenderList && prerenderList.length > 0) {
         log('info', `Pre-rendering ${prerenderList.length} routes...`);
         const { prerenderRoutes } = await import('./prerender.ts');
-        const prerenderCount = await prerenderRoutes({
+        const { count: prerenderCount } = await prerenderRoutes({
           bundlePath: result.outPath,
           outDir: join(appDir, 'dist'),
           routes: prerenderList,
@@ -447,7 +447,53 @@ async function main() {
         }
 
         const bundleContent = readFileSync(deploy.bundlePath, 'utf-8');
-        deployPayload = { name: appName, bundle: bundleContent, assets: deploy.assets, config: serverConfig };
+        deployPayload = { name: appName, bundle: bundleContent, assets: deploy.assets, config: serverConfig } as any;
+
+        // Hybrid pre-render: if magnetic.json has prerender routes, pre-render them
+        const prerenderPatterns = appConfig.prerender;
+        if (prerenderPatterns && prerenderPatterns.length > 0) {
+          // Expand glob patterns (e.g. "/blog/*") against content slugs
+          const contentSlugs = pushContentMap ? Object.keys(pushContentMap) : [];
+          const expandedRoutes: string[] = [];
+          for (const pattern of prerenderPatterns) {
+            if (pattern.endsWith('/*')) {
+              // Glob: /blog/* → match all content slugs starting with blog/
+              const prefix = pattern.slice(1, -2); // "/blog/*" → "blog"
+              for (const slug of contentSlugs) {
+                if (slug.startsWith(prefix + '/') || slug === prefix) {
+                  expandedRoutes.push('/' + slug);
+                }
+              }
+              // Also match page routes
+              for (const page of scan.pages) {
+                if (page.routePath.startsWith('/' + prefix + '/') && !page.routePath.includes(':') && !page.isCatchAll) {
+                  expandedRoutes.push(page.routePath);
+                }
+              }
+            } else {
+              expandedRoutes.push(pattern);
+            }
+          }
+          const prerenderRouteList = [...new Set(expandedRoutes)];
+
+          if (prerenderRouteList.length > 0) {
+            log('info', `Pre-rendering ${prerenderRouteList.length} routes for hybrid SSR+SSG...`);
+            const { prerenderRoutes } = await import('./prerender.ts');
+            const { count: prCount, pages } = await prerenderRoutes({
+              bundlePath: deploy.bundlePath,
+              outDir: join(appDir, 'dist'),
+              routes: prerenderRouteList,
+              title: appConfig.name || 'Magnetic App',
+              inlineCSS: undefined,
+              publicDir: join(appDir, 'public'),
+              log,
+            });
+            if (prCount > 0) {
+              deployPayload.prerendered = pages;
+              log('info', `✓ ${prCount} routes will be served as static HTML (hybrid mode)`);
+            }
+          }
+        }
       }
 
       if (apiKey) {
@@ -480,7 +526,7 @@ async function main() {
         const directBody = Buffer.from(JSON.stringify(
           isStaticPush
             ? { static: true, assets: deployPayload.assets }
-            : { bundle: deployPayload.bundle, assets: deployPayload.assets, config: deployPayload.config }
+            : { bundle: deployPayload.bundle, assets: deployPayload.assets, config: deployPayload.config, prerendered: deployPayload.prerendered }
         ));
         const resp = await fetch(`${serverUrl}/api/apps/${appName}/deploy`, {
           method: 'POST',

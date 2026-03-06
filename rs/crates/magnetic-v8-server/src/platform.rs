@@ -861,6 +861,36 @@ fn handle_platform_connection(
                     return result;
                 }
                 ("GET", p) => {
+                    // ── Hybrid pre-render: serve pre-rendered HTML if available ──
+                    let clean = p.split('?').next().unwrap_or("/").trim_start_matches('/');
+                    let prerender_dir = format!("{}/{}/prerender", platform.data_dir, app_name);
+                    let prerender_file = if clean.is_empty() {
+                        format!("{}/index.html", prerender_dir)
+                    } else {
+                        let direct = format!("{}/{}", prerender_dir, clean);
+                        if std::path::Path::new(&direct).is_file() {
+                            direct
+                        } else {
+                            format!("{}/{}/index.html", prerender_dir, clean)
+                        }
+                    };
+                    if std::path::Path::new(&prerender_file).is_file() {
+                        if let Ok(data) = std::fs::read(&prerender_file) {
+                            let ct = guess_content_type(&prerender_file);
+                            let eh = format_extra_headers(&extra_headers);
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\
+                                Cache-Control: public, max-age=60, must-revalidate\r\n{}\r\n",
+                                ct, data.len(), eh
+                            );
+                            stream.write_all(resp.as_bytes())?;
+                            stream.write_all(&data)?;
+                            let ms = log_start.elapsed().as_millis();
+                            eprintln!("[platform:prerender] {} /apps/{}{} → ({}ms)", method, app_name, p, ms);
+                            return Ok(());
+                        }
+                    }
+                    // Fall through to V8 SSR
                     let result = handle_app_get(
                         &mut stream, Arc::clone(&app), app_name, p, &extra_headers,
                         via_subdomain.is_some(), &req_headers,
@@ -1095,6 +1125,35 @@ fn handle_deploy(
                     let _ = std::fs::write(format!("{}/{}", public_dir, filename), text);
                 }
             }
+        }
+
+        // Write pre-rendered pages (hybrid SSR + SSG)
+        let prerender_dir = format!("{}/prerender", app_dir);
+        let mut prerender_count = 0usize;
+        if let Some(prerendered) = payload.get("prerendered").and_then(|v| v.as_object()) {
+            // Clean previous pre-rendered files
+            let _ = std::fs::remove_dir_all(&prerender_dir);
+            let _ = std::fs::create_dir_all(&prerender_dir);
+            for (route_path, html) in prerendered {
+                if let Some(text) = html.as_str() {
+                    if route_path.contains("..") { continue; }
+                    let clean = route_path.trim_start_matches('/');
+                    let file_path = if clean.is_empty() {
+                        format!("{}/index.html", prerender_dir)
+                    } else {
+                        format!("{}/{}/index.html", prerender_dir, clean)
+                    };
+                    if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&file_path, text);
+                    prerender_count += 1;
+                }
+            }
+            eprintln!("[platform] Pre-rendered {} routes for '{}'", prerender_count, name);
+        } else {
+            // No prerendered field — clean old pre-renders (full SSR deploy)
+            let _ = std::fs::remove_dir_all(&prerender_dir);
         }
 
         eprintln!("[platform] Deploying app: {}", name);
