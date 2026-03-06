@@ -148,8 +148,8 @@ async function main() {
 
       // Content pipeline: two modes
       // 1. Bundle mode (default): bake all content into the JS bundle
-      // 2. Disk mode (--disk-content): only bake metadata index, load .md on demand during SSG
-      const diskContent = args.includes('--disk-content');
+      // 2. Lazy mode (--lazy-content): only bake metadata index, load .md on demand during SSG
+      const diskContent = args.includes('--lazy-content');
       const contentDir = join(appDir, 'content');
       let contentInjection: string | undefined;
       let contentSlugs: string[] = [];
