@@ -1,6 +1,6 @@
 {
   "name": "@magneticjs/cli",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Magnetic CLI — build, dev, and deploy server-driven UI apps",
   "type": "module",
   "bin": {
@@ -11,7 +11,7 @@
     "dev": "tsx src/cli.ts",
     "postinstall": "node scripts/install-server.js || true"
   },
-  "files": ["dist", "src", "scripts"],
+  "files": ["dist", "src", "scripts", "docs"],
   "publishConfig": {
     "access": "public"
   },

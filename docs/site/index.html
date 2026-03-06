@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Magnetic Docs — Server-Driven UI Framework</title>
+  <meta name="description" content="Developer documentation for the Magnetic server-driven UI framework. Build apps with TSX, deploy anywhere.">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --bg-raised: #141414;
+      --bg-sunken: #0d0d0d;
+      --fg: #e4e4e7;
+      --fg-heading: #ffffff;
+      --fg-muted: #71717a;
+      --fg-subtle: #a1a1aa;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --border: #252525;
+      --border-hover: #333;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+      --shadow: 0 4px 6px rgb(0 0 0 / 0.07), 0 2px 4px rgb(0 0 0 / 0.06);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .layout { display: flex; min-height: 100dvh; }
+    .sidebar {
+      width: 260px;
+      background: var(--bg-sunken);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100dvh;
+      overflow-y: auto;
+      z-index: 10;
+    }
+    .sidebar-logo {
+      padding: 0 1.5rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .sidebar-logo h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--fg-heading);
+      letter-spacing: -0.02em;
+    }
+    .sidebar-logo span {
+      font-size: 0.75rem;
+      color: var(--fg-muted);
+      display: block;
+      margin-top: 0.25rem;
+    }
+    .sidebar nav { display: flex; flex-direction: column; gap: 2px; padding: 0 0.75rem; }
+    .sidebar a {
+      display: block;
+      padding: 0.5rem 0.75rem;
+      color: var(--fg-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      border-radius: 0.375rem;
+      transition: all 150ms ease;
+    }
+    .sidebar a:hover { color: var(--fg); background: var(--bg-raised); }
+    .sidebar a.active { color: var(--fg-heading); background: var(--primary); font-weight: 500; }
+    .sidebar .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 1rem 0.75rem 0.25rem;
+    }
+
+    .main {
+      flex: 1;
+      margin-left: 260px;
+      padding: 3rem 4rem;
+      max-width: 900px;
+    }
+
+    /* Typography */
+    .content h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--fg-heading);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.03em;
+    }
+    .content h1 + p { color: var(--fg-muted); margin-bottom: 2rem; }
+    .content h2 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--fg-heading);
+      margin-top: 2.5rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      letter-spacing: -0.02em;
+    }
+    .content h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--fg-heading);
+      margin-top: 1.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .content p { margin-bottom: 1rem; }
+    .content ul, .content ol {
+      padding-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .content li { margin-bottom: 0.35rem; }
+    .content a { color: var(--primary); text-decoration: none; }
+    .content a:hover { text-decoration: underline; }
+    .content strong { color: var(--fg-heading); font-weight: 600; }
+    .content code {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      padding: 0.125rem 0.375rem;
+      border-radius: 0.25rem;
+      color: var(--fg-subtle);
+    }
+    .content pre {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    .content pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--fg);
+    }
+    .content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.25rem;
+      font-size: 0.875rem;
+    }
+    .content th {
+      text-align: left;
+      padding: 0.625rem 0.75rem;
+      border-bottom: 2px solid var(--border);
+      color: var(--fg-heading);
+      font-weight: 600;
+    }
+    .content td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .content blockquote {
+      border-left: 3px solid var(--primary);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      background: var(--bg-raised);
+      border-radius: 0 0.375rem 0.375rem 0;
+      color: var(--fg-subtle);
+    }
+    .content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+    }
+
+    /* Page sections hidden by default */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* Mobile */
+    .menu-toggle { display: none; }
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); transition: transform 200ms ease; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; padding: 1.5rem; }
+      .menu-toggle {
+        display: block;
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        z-index: 20;
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menu</button>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <h1>Magnetic</h1>
+        <span>Server-Driven UI Framework</span>
+      </div>
+      <nav>
+        <div class="section-label">Getting Started</div>
+        <a href="#guide" class="active" data-page="guide">Developer Guide</a>
+        <a href="#app-development" data-page="app-development">App Development</a>
+
+        <div class="section-label">Reference</div>
+        <a href="#components" data-page="components">Component Patterns</a>
+        <a href="#css" data-page="css">CSS &amp; Styling</a>
+        <a href="#benchmarks" data-page="benchmarks">Benchmarks</a>
+
+        <div class="section-label">Links</div>
+        <a href="https://www.npmjs.com/package/@magneticjs/cli" target="_blank">npm: @magneticjs/cli</a>
+        <a href="https://www.npmjs.com/package/@magneticjs/server" target="_blank">npm: @magneticjs/server</a>
+        <a href="https://github.com/inventhq/magnetic" target="_blank">GitHub</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <!-- PAGE: Developer Guide -->
+      <div id="guide" class="page active content"></div>
+
+      <!-- PAGE: App Development -->
+      <div id="app-development" class="page content"></div>
+
+      <!-- PAGE: Components -->
+      <div id="components" class="page content"></div>
+
+      <!-- PAGE: CSS -->
+      <div id="css" class="page content"></div>
+
+      <!-- PAGE: Benchmarks -->
+      <div id="benchmarks" class="page content"></div>
+    </main>
+  </div>
+
+  <!-- Markdown rendering via marked.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script>
+    const pages = {
+      guide: 'DEVELOPER_GUIDE.md',
+      'app-development': 'magnetic-app-development.md',
+      components: 'magnetic-components.md',
+      css: 'magnetic-css-styling.md',
+      benchmarks: 'BENCHMARKS.md'
+    };
+
+    const cache = {};
+
+    async function loadPage(id) {
+      // Update nav
+      document.querySelectorAll('.sidebar a[data-page]').forEach(a => {
+        a.classList.toggle('active', a.dataset.page === id);
+      });
+      // Update visibility
+      document.querySelectorAll('.page').forEach(p => {
+        p.classList.toggle('active', p.id === id);
+      });
+      // Load content if not cached
+      const el = document.getElementById(id);
+      if (!cache[id]) {
+        try {
+          const res = await fetch(pages[id]);
+          if (!res.ok) throw new Error(res.statusText);
+          const md = await res.text();
+          cache[id] = marked.parse(md);
+        } catch (e) {
+          cache[id] = `<h1>Error</h1><p>Could not load ${pages[id]}: ${e.message}</p>`;
+        }
+      }
+      el.innerHTML = cache[id];
+      window.scrollTo(0, 0);
+      // Close mobile sidebar
+      document.querySelector('.sidebar').classList.remove('open');
+    }
+
+    // Nav click handling
+    document.querySelectorAll('.sidebar a[data-page]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const page = a.dataset.page;
+        history.pushState(null, '', '#' + page);
+        loadPage(page);
+      });
+    });
+
+    // Handle browser back/forward
+    window.addEventListener('popstate', () => {
+      const id = location.hash.slice(1) || 'guide';
+      if (pages[id]) loadPage(id);
+    });
+
+    // Initial load
+    const initial = location.hash.slice(1) || 'guide';
+    loadPage(pages[initial] ? initial : 'guide');
+  </script>
+</body>
+</html>
