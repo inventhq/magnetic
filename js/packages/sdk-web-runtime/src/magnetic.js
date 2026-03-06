@@ -182,7 +182,12 @@
     d.addEventListener("click", function(e) {
       var el = elOf(e); if (!el) return;
       var t = el.closest("[data-a_click]");
-      if (t) { e.preventDefault(); send(t.dataset.a_click, {}); }
+      if (t) {
+        e.preventDefault();
+        var href = t.tagName === "A" && t.getAttribute("href");
+        if (href) history.pushState({}, "", href);
+        send(t.dataset.a_click, {});
+      }
     });
     d.addEventListener("submit", function(e) {
       var el = elOf(e); if (!el) return;
