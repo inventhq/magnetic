@@ -81,9 +81,12 @@ struct CreateKeyResponse {
 #[derive(Deserialize)]
 pub struct DeployRequest {
     pub name: Option<String>,
+    #[serde(default)]
     pub bundle: String,
     pub assets: Option<HashMap<String, String>>,
     pub config: Option<String>,
+    #[serde(default)]
+    pub r#static: bool,
 }
 
 #[derive(Serialize)]
@@ -242,12 +245,12 @@ async fn deploy(
     AuthUser(user): AuthUser,
     Json(req): Json<DeployRequest>,
 ) -> Result<(StatusCode, Json<DeployResponse>), AppError> {
-    if req.bundle.is_empty() {
-        return Err(AppError::BadRequest("bundle is required".into()));
+    if !req.r#static && req.bundle.is_empty() {
+        return Err(AppError::BadRequest("bundle is required (or set static: true)".into()));
     }
 
-    // Bundle size limit: 5MB
-    if req.bundle.len() > 5 * 1024 * 1024 {
+    // Bundle size limit: 5MB (skip for static deploys which have no bundle)
+    if !req.r#static && req.bundle.len() > 5 * 1024 * 1024 {
         return Err(AppError::BadRequest("bundle exceeds 5MB limit".into()));
     }
 
@@ -333,11 +336,18 @@ async fn deploy(
         deploy_url, bundle_len, asset_count, has_config
     );
 
-    let deploy_payload = serde_json::json!({
-        "bundle": req.bundle,
-        "assets": req.assets.as_ref().unwrap_or(&HashMap::new()),
-        "config": req.config.as_deref().unwrap_or(""),
-    });
+    let deploy_payload = if req.r#static {
+        serde_json::json!({
+            "static": true,
+            "assets": req.assets.as_ref().unwrap_or(&HashMap::new()),
+        })
+    } else {
+        serde_json::json!({
+            "bundle": req.bundle,
+            "assets": req.assets.as_ref().unwrap_or(&HashMap::new()),
+            "config": req.config.as_deref().unwrap_or(""),
+        })
+    };
 
     let t0 = std::time::Instant::now();
     let resp = state
