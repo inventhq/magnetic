@@ -156,6 +156,11 @@ fn write_node(node: &DomNode, buf: &mut String) {
 
     buf.push('>');
 
+    // Raw HTML (dangerouslySetInnerHTML) — injected without escaping
+    if let Some(html) = &node.html {
+        buf.push_str(html);
+    }
+
     // Text content
     if let Some(text) = &node.text {
         buf.push_str(&escape_html(text));
@@ -246,6 +251,7 @@ mod tests {
             attrs: Some(HashMap::from([("class".into(), "container".into())])),
             events: None,
             text: None,
+            html: None,
             children: Some(vec![
                 DomNode::text("h1", "Hello"),
                 DomNode {
@@ -254,6 +260,7 @@ mod tests {
                     attrs: None,
                     events: Some(HashMap::from([("click".into(), "increment".into())])),
                     text: Some("+".into()),
+                    html: None,
                     children: None,
                 },
             ]),
@@ -274,6 +281,7 @@ mod tests {
             attrs: Some(HashMap::from([("type".into(), "text".into())])),
             events: None,
             text: None,
+            html: None,
             children: None,
         };
         let html = render_to_html(&node);

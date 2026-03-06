@@ -10,6 +10,7 @@ import { scanApp, generateBridge } from './generator.ts';
 import { bundleApp, buildForDeploy } from './bundler.ts';
 import { startDev } from './dev.ts';
 import { parseAppConfig, serializeConfigForServer, readDesignJson } from './config.ts';
+import { buildContentMap, generateContentInjection } from './content.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -145,7 +146,12 @@ async function main() {
         log('debug', `  route ${page.routePath.padEnd(15)} ← ${page.filePath}`);
       }
 
-      const bridgeCode = generateBridge(scan, appConfig, designJson ?? undefined);
+      // Content pipeline: read content/*.md → HTML at build time
+      const contentMap = buildContentMap(appDir);
+      const contentInjection = contentMap ? generateContentInjection(contentMap) : undefined;
+      if (contentMap) log('info', `Content: ${Object.keys(contentMap).length} markdown files`);
+
+      const bridgeCode = generateBridge(scan, appConfig, designJson ?? undefined, contentInjection);
       log('debug', `Bridge generated: ${bridgeCode.split('\n').length} lines`);
 
       if (args.includes('--verbose')) {
@@ -312,7 +318,10 @@ async function main() {
       if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
       const pushDesignJson = readDesignJson(appDir);
       if (pushDesignJson) log('info', 'Design tokens: design.json loaded');
-      const bridgeCode = generateBridge(scan, appConfig, pushDesignJson ?? undefined);
+      const pushContentMap = buildContentMap(appDir);
+      const pushContentInjection = pushContentMap ? generateContentInjection(pushContentMap) : undefined;
+      if (pushContentMap) log('info', `Content: ${Object.keys(pushContentMap).length} markdown files`);
+      const bridgeCode = generateBridge(scan, appConfig, pushDesignJson ?? undefined, pushContentInjection);
       const deploy = await buildForDeploy({ appDir, bridgeCode, monorepoRoot: monorepoRoot || undefined });
       const serverConfig = serializeConfigForServer(appConfig);
 

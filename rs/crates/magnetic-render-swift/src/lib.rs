@@ -279,6 +279,7 @@ mod tests {
             attrs: None,
             events: Some(HashMap::from([("click".into(), "decrement".into())])),
             text: Some("-".into()),
+            html: None,
             children: None,
         };
         let swift = render_to_swift(&node, "TestView");

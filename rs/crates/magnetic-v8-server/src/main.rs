@@ -309,6 +309,7 @@ pub fn error_fallback(error_msg: &str, action: Option<&str>) -> DomNode {
         attrs: Some(HashMap::from([("class".into(), "magnetic-error".into())])),
         events: None,
         text: None,
+        html: None,
         children: Some(children),
     }
 }

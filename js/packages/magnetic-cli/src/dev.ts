@@ -7,7 +7,8 @@ import { existsSync } from 'node:fs';
 import { spawn, ChildProcess } from 'node:child_process';
 import { scanApp, generateBridge } from './generator.ts';
 import { bundleApp } from './bundler.ts';
-import { readDesignJson } from './config.ts';
+import { parseAppConfig, readDesignJson } from './config.ts';
+import { buildContentMap, generateContentInjection } from './content.ts';
 
 export interface DevOptions {
   /** Absolute path to the app directory */
@@ -74,7 +75,13 @@ export async function startDev(opts: DevOptions): Promise<void> {
 
       const designJson = readDesignJson(appDir);
       if (designJson) console.log(`[magnetic] Design tokens: design.json loaded`);
-      const bridgeCode = generateBridge(scan, undefined, designJson ?? undefined);
+
+      const appConfig = parseAppConfig(appDir);
+      const contentMap = buildContentMap(appDir);
+      const contentInjection = contentMap ? generateContentInjection(contentMap) : undefined;
+      if (contentMap) console.log(`[magnetic] Content: ${Object.keys(contentMap).length} markdown files`);
+
+      const bridgeCode = generateBridge(scan, appConfig, designJson ?? undefined, contentInjection);
       const result = await bundleApp({
         appDir,
         bridgeCode,
@@ -129,7 +136,7 @@ export async function startDev(opts: DevOptions): Promise<void> {
   }
 
   // Watch for changes
-  const watchDirs = [join(appDir, 'pages'), join(appDir, 'components')];
+  const watchDirs = [join(appDir, 'pages'), join(appDir, 'components'), join(appDir, 'content')];
   const watchFiles = ['state.ts', 'state.tsx', 'server/state.ts', 'server/state.tsx', 'design.json']
     .map(f => join(appDir, f));
 
@@ -150,7 +157,7 @@ export async function startDev(opts: DevOptions): Promise<void> {
   for (const dir of watchDirs) {
     if (existsSync(dir)) {
       watch(dir, { recursive: true }, (event, filename) => {
-        if (filename && /\.(tsx?|jsx?|css)$/.test(filename)) {
+        if (filename && /\.(tsx?|jsx?|css|md)$/.test(filename)) {
           scheduleRebuild();
         }
       });

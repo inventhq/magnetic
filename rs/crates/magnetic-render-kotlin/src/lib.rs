@@ -307,6 +307,7 @@ mod tests {
             attrs: None,
             events: Some(HashMap::from([("click".into(), "increment".into())])),
             text: Some("+".into()),
+            html: None,
             children: None,
         };
         let kt = render_to_kotlin(&node, "TestScreen");

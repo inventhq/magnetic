@@ -30,6 +30,10 @@ pub struct DomNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 
+    /// Raw HTML content (injected without escaping, from dangerouslySetInnerHTML)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+
     /// Child nodes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<DomNode>>,
@@ -50,6 +54,7 @@ impl DomNode {
             attrs: None,
             events: None,
             text: Some(content.to_string()),
+            html: None,
             children: None,
         }
     }

@@ -7,6 +7,7 @@ export interface DomNode {
   attrs?: Record<string, string>;
   events?: Record<string, string>;
   text?: string;
+  html?: string;
   children?: DomNode[];
 }
 
@@ -124,6 +125,16 @@ export function jsx(tag: string | Component, props: Props, key?: string | number
   if (Object.keys(attrs).length) node.attrs = attrs;
   if (Object.keys(events).length) node.events = events;
 
+  // Raw HTML injection (dangerouslySetInnerHTML)
+  if (rest.dangerouslySetInnerHTML != null) {
+    const rawObj = rest.dangerouslySetInnerHTML as { __html: string };
+    if (rawObj && typeof rawObj.__html === 'string') {
+      node.html = rawObj.__html;
+      delete attrs['dangerouslySetInnerHTML'];
+      return node;
+    }
+  }
+
   // Children
   if (children != null) {
     // Single string/number child → text property (no wrapper span)
@@ -168,6 +179,7 @@ interface HtmlAttributes {
   title?: string;
   hidden?: Booleanish;
   'data-key'?: string;
+  dangerouslySetInnerHTML?: { __html: string };
 
   // Events (action names, not callbacks)
   onClick?: string;

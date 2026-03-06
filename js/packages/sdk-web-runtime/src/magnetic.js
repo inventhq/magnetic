@@ -81,7 +81,8 @@
     if (n.key) { el.dataset.key = n.key; keys[n.key] = el; }
     setAttrs(el, n);
     if (n.events) for (var v in n.events) el.dataset["a_" + v] = n.events[v];
-    if (n.text != null) el.textContent = n.text;
+    if (n.html != null) el.innerHTML = n.html;
+    else if (n.text != null) el.textContent = n.text;
     if (n.children) for (var i = 0; i < n.children.length; i++) el.appendChild(create(n.children[i]));
     return el;
   }
@@ -101,7 +102,9 @@
         if (!n.events || !(ev in n.events)) delete da[dk];
       }
     }
-    if (n.children) {
+    if (n.html != null && n.tag != "input" && n.tag != "textarea") {
+      el.innerHTML = n.html;
+    } else if (n.children) {
       reconcile(el, n.children);
     } else if (n.text != null && n.tag != "input" && n.tag != "textarea") {
       el.textContent = n.text;
