@@ -13,7 +13,7 @@ Magnetic is a server-driven UI framework where the server owns all state and ren
 
 ```
 Developer writes:           Magnetic handles:
-  pages/*.tsx        →      Route mapping, V8 bridge, SSR
+  pages/*.tsx        →      Route mapping, SSR
   components/*.tsx   →      Bundling, JSON DOM generation
   server/state.ts    →      Reducer dispatch, SSE broadcast
   design.json        →      CSS generation, theme tokens
@@ -21,7 +21,7 @@ Developer writes:           Magnetic handles:
   magnetic.json      →      Data fetching, auth, deploy config
 ```
 
-**Core principle**: TSX runs on the server in V8, never in the browser. Components are pure functions that return JSON DOM descriptors. The client receives rendered DOM snapshots and patches the real DOM. There is no React, no virtual DOM, no hydration, no client-side state.
+**Core principle**: TSX runs on the server, never in the browser. Components are pure functions that return DOM descriptors. The client receives rendered DOM snapshots and patches the real DOM. There is no React, no virtual DOM, no hydration, no client-side state.
 
 ## Project Structure
 
@@ -372,11 +372,11 @@ Events in Magnetic are **action name strings**, not JavaScript callbacks.
 
 ```
 User clicks <button onClick="delete_42">
-  → magnetic.js POSTs to /actions/delete_42
-  → Rust server calls reduce(state, "delete_42", {})
+  → Client POSTs to /actions/delete_42
+  → Server calls reduce(state, "delete_42", {})
   → New state → toViewModel() → page re-renders
-  → New JSON DOM sent back in POST response
-  → magnetic.js patches DOM in-place
+  → New DOM snapshot sent back in POST response
+  → Client patches DOM in-place
   → SSE broadcasts update to all other connected clients
 ```
 
@@ -626,7 +626,7 @@ Data sources are fetched server-side and injected as props:
 }
 ```
 
-Routes listed in `prerender` are pre-rendered to static HTML at deploy time and served directly from disk — no V8 compute. All other routes render through V8 as normal. Use `/*` globs to pre-render all content under a prefix (e.g., `"/blog/*"` pre-renders every blog post). Great for sites mixing static content with live interactive pages.
+Routes listed in `prerender` are pre-rendered to static HTML at deploy time and served directly from disk. All other routes render dynamically as normal. Use `/*` globs to pre-render all content under a prefix (e.g., `"/blog/*"` pre-renders every blog post). See [Hybrid Pre-render](/hybrid-prerender) for details.
 
 ### With Actions (API forwarding)
 
@@ -673,7 +673,7 @@ magnetic push --dir apps/my-app --name my-app --server https://api.fujs.dev
 magnetic push --static --dir apps/my-app
 ```
 
-One command. No Docker, no CI pipeline. SSR deploys hot-swap the V8 isolate. SSG deploys write static files — no V8 needed.
+One command. No Docker, no CI pipeline. SSR deploys hot-reload instantly. SSG deploys write static files.
 
 ## Complete Example: Task Board
 
@@ -834,6 +834,6 @@ import { Head, Link } from '@magneticjs/server/jsx-runtime'; // ✅
 | Navigation | `<Link href="/path">` | `<Link href="/path">` (similar) |
 | Styling | Utility classes + `design.json` | Tailwind, CSS modules |
 | Data fetching | `magnetic.json` data sources | `useEffect`, `getServerSideProps` |
-| Rendering | Server V8 → JSON DOM → SSE push | Client React → virtual DOM → reconcile |
+| Rendering | Server renders → DOM snapshot → SSE push | Client React → virtual DOM → reconcile |
 | Bundle size | ~2KB client + 0 framework JS | 80-150KB+ |
 | Hydration | None (no client framework) | Required (framework bootstrap) |

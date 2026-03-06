@@ -369,7 +369,6 @@ magnetic push --static --name my-app --server https://api.fujs.dev
 Your app gets a subdomain: `https://my-app.fujs.dev`
 
 What gets deployed: your pages, components, state, config, and static assets.
-What does NOT get deployed: the Rust server, magnetic.js runtime, native SDKs — these are part of the platform.
 
 ## Anti-Patterns — What NOT to Do
 
@@ -413,7 +412,7 @@ import { Head, Link } from '@magneticjs/server/jsx-runtime';
 | Navigation | `<Link href="/path">` | `<Link href="/path">` |
 | Styling | `design.json` + utility classes | Tailwind, CSS modules |
 | Data fetching | `magnetic.json` data sources | `useEffect`, `getServerSideProps` |
-| Rendering | Server V8 → SSR HTML → SSE patches | Client React → VDOM → reconcile |
+| Rendering | Server renders → SSR HTML → SSE patches | Client React → VDOM → reconcile |
 | Bundle size | 2.3 KB (fixed) | 80–150 KB+ (grows with app) |
 | Hydration | None | Required |
 | Native mobile | Built-in (same server) | Separate codebase |
@@ -425,6 +424,7 @@ import { Head, Link } from '@magneticjs/server/jsx-runtime';
 - [CSS & Styling](/css-styling) — Design tokens, utility classes, custom CSS
 - [Benchmarks](/benchmarks) — Performance measurements vs other frameworks
 - [Static Site Generation](/static-site-generation) — SSG, lazy content, deployment
+- [Hybrid Pre-render](/hybrid-prerender) — Mix static + dynamic pages in one app
 - [npm: @magneticjs/cli](https://www.npmjs.com/package/@magneticjs/cli) — CLI package
 - [npm: @magneticjs/server](https://www.npmjs.com/package/@magneticjs/server) — JSX runtime
 - [GitHub](https://github.com/inventhq/magnetic) — Source code

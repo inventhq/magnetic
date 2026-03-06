@@ -141,7 +141,7 @@ The `"css"` field controls how much CSS is generated:
 | **pages** | `"css": "pages"` | Union of all routes (~3-5KB) | Yes | **Default choice for most apps** |
 | **used** | `"css": "used"` | Current page only (~2-3KB) | No | Static sites (SSG), no SSE navigation |
 
-**Always use `"pages"` unless you have a specific reason not to.** It scans all routes at V8 init, so every class from any page is included. SSE navigation won't break.
+**Always use `"pages"` unless you have a specific reason not to.** It scans all routes at build time, so every class from any page is included. SSE navigation won't break.
 
 ---
 
@@ -496,20 +496,19 @@ design.json
 CLI reads design.json
      │
      ▼
-generateBridge() adds CSS imports to V8 bridge code
+generateBridge() adds CSS imports to build
      │
      ▼
 esbuild bundles bridge + @magneticjs/css into IIFE
      │
      ▼
-V8 isolate executes bundle
+Server executes bundle
      │
      ├─ render(path) → DomNode           (SSE/action paths — no CSS)
      └─ renderWithCSS(path) → {root, css} (SSR path — CSS included)
             │
             ▼
-     Rust server parses {root, css}
-     Merges generated CSS + public/style.css
+     Server merges generated CSS + public/style.css
      Injects into <head> as inline <style>
             │
             ▼
@@ -520,7 +519,7 @@ V8 isolate executes bundle
 Key points:
 - `render()` and `reduce()` are **untouched** — SSE and action paths return bare `DomNode`
 - `renderWithCSS()` is a **new** export used only for initial SSR HTML
-- CSS is generated **once** at V8 init (for `"all"` and `"pages"` modes) and cached
+- CSS is generated **once** at server init (for `"all"` and `"pages"` modes) and cached
 - SSE updates reuse the CSS already in the page — no style updates needed
 
 ---

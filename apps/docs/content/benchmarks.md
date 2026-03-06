@@ -7,25 +7,23 @@ order: 5
 
 # Magnetic Performance Benchmarks
 
-Measured against the shipment-tracker app (8 SSE events, interactive UI) running on `magnetic-v8-server` (Rust + V8).
+Measured against the shipment-tracker app (8 SSE events, interactive UI) running on the Magnetic platform server.
 
 ## Payload Sizes
 
 | Asset | Raw | Gzip | Brotli |
 |-------|-----|------|--------|
 | HTML (SSR, complete page) | 25,303 B | ~4,200 B | 3,957 B |
-| magnetic.js (client runtime) | 4,558 B | 2,000 B | **1,711 B** |
-| transport.wasm (dedup cache) | 1,129 B | ~700 B | **629 B** |
-| **Total client runtime** | **5,687 B** | **~2,700 B** | **2,340 B** |
+| **Client runtime (total)** | **5,687 B** | **~2,700 B** | **2,340 B** |
 
 ### Framework Comparison — Client Runtime Size (Brotli)
 
 | Framework | Client Runtime | Notes |
 |-----------|---------------|-------|
-| **Magnetic** | **2.3 KB** | JS + WASM, no hydration |
+| **Magnetic** | **2.3 KB** | No hydration, fixed size |
 | Alpine.js | ~4.5 KB | Declarative only, no SSR |
 | Svelte (compiled) | ~2-4 KB | Per-component, grows with app size |
-| HTMX | ~14 KB | No SSE dedup, no WASM |
+| HTMX | ~14 KB | No SSE dedup |
 | Preact | ~11 KB | Needs hydration |
 | React + ReactDOM | ~45 KB | Needs hydration + client router |
 | Next.js | ~80-120 KB | Framework + React + router + hydration |
@@ -35,28 +33,28 @@ Magnetic's runtime is **fixed at 2.3 KB** regardless of app complexity — the s
 
 ## Time to First Byte (TTFB)
 
-Measured locally (Rust server, V8 SSR):
+Measured locally:
 
 | Request | Cold (first) | Warm (subsequent) |
 |---------|-------------|-------------------|
 | Initial page load | ~470 ms | **6-14 ms** |
 | Action POST | ~15 ms | **0.7-1.2 ms** |
 
-Cold start includes V8 isolate initialization. Warm requests are sub-millisecond for actions because V8 stays hot.
+Cold start includes server initialization. Warm requests are sub-millisecond for actions because the server keeps your app loaded in memory.
 
 ### Framework Comparison — SSR TTFB
 
 | Framework | Typical TTFB | Notes |
 |-----------|-------------|-------|
-| **Magnetic** | **6-14 ms** | Rust HTTP + V8 isolate, no Node.js overhead |
+| **Magnetic** | **6-14 ms** | Native server, no Node.js overhead |
 | Next.js (Node) | 50-200 ms | Node.js + React renderToString |
 | Remix (Node) | 40-150 ms | Node.js + React + loaders |
-| HTMX + Go/Rust | 5-20 ms | Comparable, but no reactive updates |
+| HTMX + Go | 5-20 ms | Comparable, but no reactive updates |
 | Rails | 30-100 ms | Ruby + ERB templating |
 
 ## Interaction Round-Trip
 
-Single action flow: user click → POST → V8 reduce → DOM snapshot response → client patch.
+Single action flow: user click → POST → server reduce → DOM snapshot response → client patch.
 
 | Metric | Magnetic | Typical SPA |
 |--------|----------|-------------|
@@ -73,7 +71,7 @@ Single action flow: user click → POST → V8 reduce → DOM snapshot response 
 | Debounce interval | 150 ms |
 | Max updates/sec | ~7 (debounced) |
 | Per-update payload | ~15 KB raw / ~2.5 KB Brotli (full snapshot) |
-| Dedup | WASM FNV hash (client) + event_id ring (server) |
+| Dedup | Client-side hash + server-side event_id ring |
 | Reconnect | Automatic with exponential backoff |
 
 ## Developer Experience (DX)

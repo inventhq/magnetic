@@ -7,7 +7,7 @@ order: 3
 
 # Magnetic Component Patterns
 
-Magnetic components are **pure functions** that receive props and return JSON DOM descriptors via TSX. They run on the server in V8 — never in the browser.
+Magnetic components are **pure functions** that receive props and return DOM descriptors via TSX. They run on the server — never in the browser.
 
 ## Critical Rules
 

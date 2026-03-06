@@ -13,7 +13,7 @@ Magnetic can pre-render your pages to **pure static HTML** at build time. No Jav
 
 | Mode | Best for | JavaScript shipped | Server required |
 |------|----------|-------------------|-----------------|
-| **SSR** (default) | Dynamic apps with real-time data, user sessions | 2KB client runtime | Yes (magnetic-v8-server) |
+| **SSR** (default) | Dynamic apps with real-time data, user sessions | 2KB client runtime | Yes |
 | **SSG** (`--static`) | Docs, blogs, marketing pages, content sites | **0KB — none** | No |
 
 SSG is the right choice when your content doesn't change per-request. The same `content/*.md` files and page components work in both modes — the only difference is the output.
@@ -36,7 +36,7 @@ Each route produces a self-contained HTML file with inlined CSS. Sidebar navigat
 ## How It Works
 
 1. **Build**: The CLI bundles your app (pages, state, JSX runtime, CSS framework) into `app.js`
-2. **Render**: Each route is rendered through the same V8 pipeline used for SSR
+2. **Render**: Each route is rendered through the same server pipeline used for SSR
 3. **Extract**: `<Head>` components become `<head>` elements, design tokens become inlined `<style>`
 4. **Write**: Each page is written as `{route}/index.html`
 
@@ -127,7 +127,7 @@ The key advantage: **adding a new `.md` file requires zero rebuild** in lazy mod
 magnetic push --static
 ```
 
-This pre-renders all routes, collects the HTML + CSS + public assets, and deploys to the Magnetic platform as a static site. The platform serves files directly — no V8 isolate, no SSE, just fast static file serving with proper content-type headers and caching.
+This pre-renders all routes, collects the HTML + CSS + public assets, and deploys to the Magnetic platform as a static site. The platform serves files directly — no server rendering, no SSE, just fast static file serving with proper content-type headers and caching.
 
 ### Deploy to External Hosts
 
@@ -157,63 +157,4 @@ Your page components work identically in both modes. The `href` attribute on `<L
 
 ## Hybrid Mode — SSR + Pre-rendered Pages
 
-For apps that mix dynamic and static content (e.g., a news site with live dashboards AND thousands of blog posts), you can **pre-render specific routes** while keeping the rest fully dynamic.
-
-Add a `prerender` array to `magnetic.json`:
-
-```json
-{
-  "name": "my-news-site",
-  "prerender": ["/", "/about", "/blog/*"]
-}
-```
-
-When you run `magnetic push`, the CLI:
-1. Builds the SSR bundle as normal
-2. Pre-renders the listed routes to static HTML
-3. Sends both the bundle AND the pre-rendered pages to the platform
-
-The platform server checks for a pre-rendered file **before** hitting V8. If a pre-rendered file exists, it serves it instantly (no V8 compute). If not, V8 renders on demand as usual.
-
-### Glob Patterns
-
-Use `/*` to pre-render all content under a prefix:
-
-| Pattern | Expands to |
-|---------|-----------|
-| `"/"` | Just the homepage |
-| `"/about"` | Single route |
-| `"/blog/*"` | All content slugs under `blog/` |
-| `"/docs/*"` | All content slugs under `docs/` |
-
-### When to Use Hybrid vs Pure SSG
-
-| Mode | Command | Use case |
-|------|---------|----------|
-| **Pure SSR** | `magnetic push` | All pages dynamic, no pre-rendering |
-| **Hybrid** | `magnetic push` + `prerender` in config | Mix of static content + live interactive pages |
-| **Pure SSG** | `magnetic push --static` | All pages static, zero JS, no server needed |
-
-Hybrid mode gives you the best of both worlds: blog posts and documentation pages serve instantly from disk, while dashboards, user settings, and live feeds render through V8 with full interactivity.
-
-### Example: News Site
-
-```json
-{
-  "name": "my-news-site",
-  "server": "http://localhost:3003",
-  "prerender": ["/", "/about", "/articles/*", "/categories/*"],
-  "data": {
-    "live-feed": {
-      "url": "https://api.example.com/live",
-      "type": "sse",
-      "page": "/live"
-    }
-  }
-}
-```
-
-- `/`, `/about`, `/articles/*`, `/categories/*` → served as static HTML (instant)
-- `/live` → rendered by V8 with real-time SSE updates (dynamic)
-
-The `content/` folder is the single source of truth in all modes — same markdown files, same `getContent()`/`listContent()` API, same page components. Only the serving behavior differs.
+Need some pages static and others dynamic? See the [Hybrid Pre-render](/hybrid-prerender) guide — pre-render content pages at deploy time while keeping interactive pages fully dynamic.
