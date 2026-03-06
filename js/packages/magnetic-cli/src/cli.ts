@@ -171,14 +171,36 @@ async function main() {
       const elapsed = Date.now() - buildStart;
       log('info', `✓ Built ${result.outPath} (${kb}KB) in ${elapsed}ms`);
 
-      // SSG: prerender configured routes to static HTML
-      if (appConfig.prerender && appConfig.prerender.length > 0) {
-        log('info', `Pre-rendering ${appConfig.prerender.length} routes...`);
+      // SSG: prerender routes to static HTML
+      // --static: auto-discover from content slugs + static pages
+      // or use explicit prerender list from magnetic.json
+      let prerenderList: string[] | undefined = appConfig.prerender;
+
+      if (args.includes('--static')) {
+        prerenderList = ['/'];
+        // Add content-based routes
+        if (contentMap) {
+          for (const slug of Object.keys(contentMap)) {
+            prerenderList.push('/' + slug);
+          }
+        }
+        // Add static page routes (skip / since already added, skip dynamic :param routes)
+        for (const page of scan.pages) {
+          if (page.routePath !== '/' && !page.routePath.includes(':') && !page.isCatchAll) {
+            prerenderList.push(page.routePath);
+          }
+        }
+        // Deduplicate
+        prerenderList = [...new Set(prerenderList)];
+      }
+
+      if (prerenderList && prerenderList.length > 0) {
+        log('info', `Pre-rendering ${prerenderList.length} routes...`);
         const { prerenderRoutes } = await import('./prerender.ts');
         const prerenderCount = await prerenderRoutes({
           bundlePath: result.outPath,
           outDir: join(appDir, 'dist'),
-          routes: appConfig.prerender,
+          routes: prerenderList,
           title: appConfig.name || 'Magnetic App',
           inlineCSS: undefined,
           publicDir: join(appDir, 'public'),

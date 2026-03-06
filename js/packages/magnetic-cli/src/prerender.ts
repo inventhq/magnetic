@@ -145,6 +145,7 @@ interface DomNode {
   attrs?: Record<string, string>;
   events?: Record<string, string>;
   text?: string;
+  html?: string;
   children?: DomNode[];
 }
 
@@ -171,7 +172,11 @@ function renderNodeToHTML(node: DomNode): string {
 
   if (VOID_ELEMENTS.has(node.tag)) return html + ' />';
   html += '>';
-  if (node.text != null) html += escHTML(node.text);
+  if (node.html != null) {
+    html += node.html; // raw HTML pass-through (dangerouslySetInnerHTML)
+  } else if (node.text != null) {
+    html += escHTML(node.text);
+  }
   if (node.children) {
     for (const child of node.children) html += renderNodeToHTML(child);
   }
