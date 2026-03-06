@@ -19,6 +19,10 @@ export interface ContentMap {
   [slug: string]: { meta: Record<string, any>; html: string };
 }
 
+export interface ContentIndex {
+  [slug: string]: { meta: Record<string, any> };
+}
+
 /**
  * Parse YAML-style frontmatter from markdown content.
  * Supports: strings, numbers, booleans, arrays (bracket syntax), dates.
@@ -103,7 +107,7 @@ interface ContentFile {
   slug: string;
 }
 
-function scanContentDir(dir: string, prefix: string): ContentFile[] {
+export function scanContentDir(dir: string, prefix: string): ContentFile[] {
   const results: ContentFile[] = [];
   const entries = readdirSync(dir).sort();
 
@@ -139,3 +143,39 @@ export function generateContentInjection(contentMap: ContentMap): string {
   lines.push(`globalThis.__magnetic_content = ${JSON.stringify(contentMap)};`);
   return lines.join('\n');
 }
+
+/**
+ * Scan content/ directory and extract frontmatter metadata only (no HTML conversion).
+ * Returns a lightweight index suitable for listContent() without loading full content.
+ */
+export function buildContentIndex(appDir: string): ContentIndex | null {
+  const contentDir = join(appDir, 'content');
+  if (!existsSync(contentDir)) return null;
+
+  const entries = scanContentDir(contentDir, '');
+  if (entries.length === 0) return null;
+
+  const index: ContentIndex = {};
+  for (const entry of entries) {
+    const raw = readFileSync(join(contentDir, entry.relativePath), 'utf-8');
+    const { meta } = parseFrontmatter(raw);
+    index[entry.slug] = { meta };
+  }
+  return index;
+}
+
+/**
+ * Generate JS code for on-disk content mode.
+ * Injects a lightweight index (metadata only) and a content directory path.
+ * The runtime calls __magnetic_content_load(slug) to load individual pages on demand.
+ */
+export function generateContentDiskInjection(contentIndex: ContentIndex, contentDir: string): string {
+  const lines: string[] = [];
+  lines.push('// ── Content Pipeline (on-disk, loaded on demand) ────────────');
+  lines.push(`globalThis.__magnetic_content_index = ${JSON.stringify(contentIndex)};`);
+  lines.push(`globalThis.__magnetic_content_dir = ${JSON.stringify(contentDir)};`);
+  return lines.join('\n');
+}
+
+/** Exported for use by prerender.ts */
+export { parseFrontmatter };

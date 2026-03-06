@@ -4,6 +4,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import vm from 'node:vm';
+import { marked } from 'marked';
+import { parseFrontmatter } from './content.ts';
 
 export interface PrerenderOptions {
   /** Path to the built app.js bundle */
@@ -18,6 +20,8 @@ export interface PrerenderOptions {
   inlineCSS?: string;
   /** Public directory (for reading style.css) */
   publicDir?: string;
+  /** Content directory for on-disk mode (loads .md files on demand) */
+  contentDir?: string;
   /** Logger function */
   log?: (level: string, msg: string) => void;
 }
@@ -28,17 +32,35 @@ export interface PrerenderOptions {
  * for each route, and converts the DomNode to HTML.
  */
 export async function prerenderRoutes(opts: PrerenderOptions): Promise<number> {
-  const { bundlePath, outDir, routes, title, inlineCSS, publicDir, log } = opts;
+  const { bundlePath, outDir, routes, title, inlineCSS, publicDir, contentDir, log } = opts;
 
   // Load the built bundle
   const bundleCode = readFileSync(bundlePath, 'utf-8');
 
+  // On-disk content loader: reads a single .md file, parses frontmatter + markdown → HTML
+  // This is injected into the VM so getContent(slug) can call it on demand
+  const contentLoadFn = contentDir ? (slug: string) => {
+    const filePath = join(contentDir, slug + '.md');
+    // Support nested slugs: blog/hello-world → blog/hello-world.md
+    if (!existsSync(filePath)) return null;
+    const raw = readFileSync(filePath, 'utf-8');
+    const { meta, body } = parseFrontmatter(raw);
+    marked.setOptions({ gfm: true, breaks: false });
+    const html = marked.parse(body) as string;
+    return { meta, html };
+  } : undefined;
+
   // Create a minimal VM context with console
-  const context = vm.createContext({
+  const ctxObj: any = {
     console,
     self: {},
     globalThis: {} as any,
-  });
+  };
+  // Inject the on-demand loader into the VM context
+  if (contentLoadFn) {
+    ctxObj.globalThis.__magnetic_content_load = contentLoadFn;
+  }
+  const context = vm.createContext(ctxObj);
 
   // Execute the IIFE — it assigns to globalThis.MagneticApp (via the IIFE global name)
   const script = new vm.Script(bundleCode + '\n;globalThis.__MA = MagneticApp;', {

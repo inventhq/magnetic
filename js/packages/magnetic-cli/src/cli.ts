@@ -146,10 +146,30 @@ async function main() {
         log('debug', `  route ${page.routePath.padEnd(15)} ← ${page.filePath}`);
       }
 
-      // Content pipeline: read content/*.md → HTML at build time
-      const contentMap = buildContentMap(appDir);
-      const contentInjection = contentMap ? generateContentInjection(contentMap) : undefined;
-      if (contentMap) log('info', `Content: ${Object.keys(contentMap).length} markdown files`);
+      // Content pipeline: two modes
+      // 1. Bundle mode (default): bake all content into the JS bundle
+      // 2. Disk mode (--disk-content): only bake metadata index, load .md on demand during SSG
+      const diskContent = args.includes('--disk-content');
+      const contentDir = join(appDir, 'content');
+      let contentInjection: string | undefined;
+      let contentSlugs: string[] = [];
+
+      if (diskContent) {
+        const { buildContentIndex, generateContentDiskInjection } = await import('./content.ts');
+        const contentIndex = buildContentIndex(appDir);
+        if (contentIndex) {
+          contentSlugs = Object.keys(contentIndex);
+          contentInjection = generateContentDiskInjection(contentIndex, contentDir);
+          log('info', `Content: ${contentSlugs.length} markdown files (on-disk mode)`);
+        }
+      } else {
+        const contentMap = buildContentMap(appDir);
+        if (contentMap) {
+          contentSlugs = Object.keys(contentMap);
+          contentInjection = generateContentInjection(contentMap);
+          log('info', `Content: ${contentSlugs.length} markdown files`);
+        }
+      }
 
       const bridgeCode = generateBridge(scan, appConfig, designJson ?? undefined, contentInjection);
       log('debug', `Bridge generated: ${bridgeCode.split('\n').length} lines`);
@@ -179,10 +199,8 @@ async function main() {
       if (args.includes('--static')) {
         prerenderList = ['/'];
         // Add content-based routes
-        if (contentMap) {
-          for (const slug of Object.keys(contentMap)) {
-            prerenderList.push('/' + slug);
-          }
+        for (const slug of contentSlugs) {
+          prerenderList.push('/' + slug);
         }
         // Add static page routes (skip / since already added, skip dynamic :param routes)
         for (const page of scan.pages) {
@@ -204,6 +222,7 @@ async function main() {
           title: appConfig.name || 'Magnetic App',
           inlineCSS: undefined,
           publicDir: join(appDir, 'public'),
+          contentDir: diskContent ? contentDir : undefined,
           log,
         });
         log('info', `✓ Pre-rendered ${prerenderCount} static HTML pages`);
