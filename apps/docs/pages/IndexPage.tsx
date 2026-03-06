@@ -18,7 +18,7 @@ export function IndexPage(props: any) {
             <a
               href={item.href}
               class={item.active ? 'nav-link active' : 'nav-link'}
-              onClick={`navigate_doc_${item.slug}`}
+              onClick={`navigate:/${item.slug}`}
               key={`nav-${item.slug}`}
             >
               {item.title}

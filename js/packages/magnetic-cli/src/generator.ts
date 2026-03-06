@@ -316,7 +316,7 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
   lines.push('  try {');
   lines.push('    var st = __getState(sid);');
   lines.push('    const merged = Object.assign({}, __magneticData, st);');
-  lines.push('    const vm = toViewModel(merged, path);');
+  lines.push('    const vm = toViewModel(merged, path);')
   lines.push('    const result = router.resolve(path, vm);');
   if (catchAllPage) {
     lines.push(`    if (!result) return ${catchAllPage.importName}({ params: {} });`);
