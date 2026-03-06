@@ -3,7 +3,7 @@
 // Commands: dev, build, push
 
 import { resolve, join, dirname } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { scanApp, generateBridge } from './generator.ts';
@@ -341,6 +341,7 @@ async function main() {
       const serverUrl = getArg('--server') || config.server || globalConfig.server;
       const appName = getArg('--name') || config.name;
       const apiKey = resolveApiKey();
+      const isStaticPush = args.includes('--static');
 
       if (!serverUrl) {
         console.error('[magnetic] No server URL. Use --server <url> or set "server" in magnetic.json');
@@ -351,38 +352,108 @@ async function main() {
         process.exit(1);
       }
 
-      log('info', `Building for deploy...`);
-      const scan = scanApp(appDir, monorepoRoot || undefined);
-      const appConfig = parseAppConfig(appDir);
-      log('info', `Scanned: ${scan.pages.length} pages, ${scan.layouts.length} layouts, state: ${scan.statePath || 'none'}`);
-      if (appConfig.data.length > 0) log('info', `Data sources: ${appConfig.data.length}`);
-      if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
-      const pushDesignJson = readDesignJson(appDir);
-      if (pushDesignJson) log('info', 'Design tokens: design.json loaded');
-      const pushContentMap = buildContentMap(appDir);
-      const pushContentInjection = pushContentMap ? generateContentInjection(pushContentMap) : undefined;
-      if (pushContentMap) log('info', `Content: ${Object.keys(pushContentMap).length} markdown files`);
-      const bridgeCode = generateBridge(scan, appConfig, pushDesignJson ?? undefined, pushContentInjection);
-      const deploy = await buildForDeploy({ appDir, bridgeCode, monorepoRoot: monorepoRoot || undefined });
-      const serverConfig = serializeConfigForServer(appConfig);
+      let deployPayload: any;
 
-      log('info', `Bundle: ${(deploy.bundleSize / 1024).toFixed(1)}KB (minified)`);
-      log('info', `Assets: ${Object.keys(deploy.assets).length} files`);
-      for (const [name, content] of Object.entries(deploy.assets)) {
-        log('debug', `  asset: ${name} (${(content.length / 1024).toFixed(1)}KB)`);
+      if (isStaticPush) {
+        // ── Static (SSG) deployment ──────────────────────────────
+        log('info', `Building static site for deploy...`);
+        const scan = scanApp(appDir, monorepoRoot || undefined);
+        const appConfig = parseAppConfig(appDir);
+        log('info', `Scanned: ${scan.pages.length} pages, ${scan.layouts.length} layouts, state: ${scan.statePath || 'none'}`);
+        const pushDesignJson = readDesignJson(appDir);
+        if (pushDesignJson) log('info', 'Design tokens: design.json loaded');
+        const pushContentMap = buildContentMap(appDir);
+        const pushContentInjection = pushContentMap ? generateContentInjection(pushContentMap) : undefined;
+        const contentSlugs = pushContentMap ? Object.keys(pushContentMap) : [];
+        if (pushContentMap) log('info', `Content: ${contentSlugs.length} markdown files`);
+        const bridgeCode = generateBridge(scan, appConfig, pushDesignJson ?? undefined, pushContentInjection);
+
+        const result = await bundleApp({
+          appDir,
+          bridgeCode,
+          minify: true,
+          monorepoRoot: monorepoRoot || undefined,
+        });
+
+        // Build prerender route list
+        const prerenderList: string[] = ['/'];
+        for (const slug of contentSlugs) prerenderList.push('/' + slug);
+        for (const page of scan.pages) {
+          if (page.routePath !== '/' && !page.routePath.includes(':') && !page.isCatchAll) {
+            prerenderList.push(page.routePath);
+          }
+        }
+        const routes = [...new Set(prerenderList)];
+
+        log('info', `Pre-rendering ${routes.length} routes...`);
+        const { prerenderRoutes } = await import('./prerender.ts');
+        const distDir = join(appDir, 'dist');
+        await prerenderRoutes({
+          bundlePath: result.outPath,
+          outDir: distDir,
+          routes,
+          title: appConfig.name || 'Magnetic App',
+          inlineCSS: undefined,
+          publicDir: join(appDir, 'public'),
+          contentDir: undefined,
+          log,
+        });
+
+        // Collect all files from dist/ (excluding app.js bundle) + public/
+        const staticFiles: Record<string, string> = {};
+        const collectFiles = (dir: string, prefix: string) => {
+          if (!existsSync(dir)) return;
+          for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            if (entry.isDirectory()) {
+              collectFiles(join(dir, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
+            } else if (entry.isFile() && entry.name !== 'app.js') {
+              const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+              staticFiles[relPath] = readFileSync(join(dir, entry.name), 'utf-8');
+            }
+          }
+        };
+        // Public assets (CSS, images, etc.)
+        collectFiles(join(appDir, 'public'), '');
+        // Prerendered HTML pages (overwrites any public/ conflicts)
+        collectFiles(distDir, '');
+
+        log('info', `Static files: ${Object.keys(staticFiles).length} files`);
+        for (const [name, content] of Object.entries(staticFiles)) {
+          log('debug', `  ${name} (${(content.length / 1024).toFixed(1)}KB)`);
+        }
+
+        deployPayload = { name: appName, static: true, assets: staticFiles };
+      } else {
+        // ── SSR deployment ───────────────────────────────────────
+        log('info', `Building for deploy...`);
+        const scan = scanApp(appDir, monorepoRoot || undefined);
+        const appConfig = parseAppConfig(appDir);
+        log('info', `Scanned: ${scan.pages.length} pages, ${scan.layouts.length} layouts, state: ${scan.statePath || 'none'}`);
+        if (appConfig.data.length > 0) log('info', `Data sources: ${appConfig.data.length}`);
+        if (appConfig.actions.length > 0) log('info', `Action mappings: ${appConfig.actions.length}`);
+        const pushDesignJson = readDesignJson(appDir);
+        if (pushDesignJson) log('info', 'Design tokens: design.json loaded');
+        const pushContentMap = buildContentMap(appDir);
+        const pushContentInjection = pushContentMap ? generateContentInjection(pushContentMap) : undefined;
+        if (pushContentMap) log('info', `Content: ${Object.keys(pushContentMap).length} markdown files`);
+        const bridgeCode = generateBridge(scan, appConfig, pushDesignJson ?? undefined, pushContentInjection);
+        const deploy = await buildForDeploy({ appDir, bridgeCode, monorepoRoot: monorepoRoot || undefined });
+        const serverConfig = serializeConfigForServer(appConfig);
+
+        log('info', `Bundle: ${(deploy.bundleSize / 1024).toFixed(1)}KB (minified)`);
+        log('info', `Assets: ${Object.keys(deploy.assets).length} files`);
+        for (const [name, content] of Object.entries(deploy.assets)) {
+          log('debug', `  asset: ${name} (${(content.length / 1024).toFixed(1)}KB)`);
+        }
+
+        const bundleContent = readFileSync(deploy.bundlePath, 'utf-8');
+        deployPayload = { name: appName, bundle: bundleContent, assets: deploy.assets, config: serverConfig };
       }
-
-      const bundleContent = readFileSync(deploy.bundlePath, 'utf-8');
 
       if (apiKey) {
         // Authenticated: deploy via control plane
-        log('info', `Deploying to ${serverUrl} (authenticated)...`);
-        const deployBody = Buffer.from(JSON.stringify({
-          name: appName,
-          bundle: bundleContent,
-          assets: deploy.assets,
-          config: serverConfig,
-        }));
+        log('info', `Deploying ${isStaticPush ? 'static site' : 'app'} to ${serverUrl} (authenticated)...`);
+        const deployBody = Buffer.from(JSON.stringify(deployPayload));
         const resp = await fetch(`${serverUrl}/api/deploy`, {
           method: 'POST',
           headers: {
@@ -397,6 +468,7 @@ async function main() {
           log('info', `✓ Deployed!`);
           log('info', `  Live at: ${data.url}`);
           log('info', `  App ID:  ${data.id}`);
+          if (data.static) log('info', `  Mode: static (${data.files} files)`);
         } else {
           const text = await resp.text();
           log('error', `Deploy failed (${resp.status}): ${text}`);
@@ -405,11 +477,11 @@ async function main() {
       } else {
         // No auth: direct push to node (backward-compatible with --platform servers)
         log('info', `Pushing to ${serverUrl}/api/apps/${appName}/deploy...`);
-        const directBody = Buffer.from(JSON.stringify({
-          bundle: bundleContent,
-          assets: deploy.assets,
-          config: serverConfig,
-        }));
+        const directBody = Buffer.from(JSON.stringify(
+          isStaticPush
+            ? { static: true, assets: deployPayload.assets }
+            : { bundle: deployPayload.bundle, assets: deployPayload.assets, config: deployPayload.config }
+        ));
         const resp = await fetch(`${serverUrl}/api/apps/${appName}/deploy`, {
           method: 'POST',
           headers: {
@@ -422,6 +494,7 @@ async function main() {
           const data = await resp.json() as any;
           log('info', `✓ Deployed! ${data.url || serverUrl + '/apps/' + appName + '/'}`);
           log('info', `  Live at: ${serverUrl}/apps/${appName}/`);
+          if (data.static) log('info', `  Mode: static (${data.files} files)`);
         } else {
           const text = await resp.text();
           log('error', `Deploy failed (${resp.status}): ${text}`);

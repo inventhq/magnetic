@@ -41,6 +41,8 @@ const REAPER_INTERVAL_SECS: u64 = 30;
 
 struct AppHandle {
     name: String,
+    /// True for SSG/static deployments — no V8, serve files from static_dir
+    is_static: bool,
     v8_tx: Mutex<Option<mpsc::Sender<V8Request>>>,
     parked: AtomicBool,
     last_activity: Mutex<Instant>,
@@ -247,8 +249,18 @@ pub fn run_platform(args: &[String]) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let name = entry.file_name().to_string_lossy().to_string();
+                let static_marker = entry.path().join("static.marker");
                 let bundle_path = entry.path().join("bundle.js");
-                if bundle_path.exists() {
+                if static_marker.exists() {
+                    match load_static_app(&name, &data_dir) {
+                        Ok(handle) => {
+                            eprintln!("[platform] Loaded static app: {}", name);
+                            let app = Arc::new(handle);
+                            platform.apps.write().unwrap().insert(name, Arc::clone(&app));
+                        }
+                        Err(e) => eprintln!("[platform] Failed to load static {}: {}", name, e),
+                    }
+                } else if bundle_path.exists() {
                     match load_app(&name, &data_dir) {
                         Ok(handle) => {
                             eprintln!("[platform] Loaded app: {}", name);
@@ -380,6 +392,7 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
 
     Ok(AppHandle {
         name: name.to_string(),
+        is_static: false,
         v8_tx: Mutex::new(Some(tx)),
         parked: AtomicBool::new(false),
         last_activity: Mutex::new(Instant::now()),
@@ -392,6 +405,35 @@ fn load_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
         data_dir: data_dir.to_string(),
         data_ctx,
         auth: auth_mw,
+    })
+}
+
+/// Load a static (SSG) app — no V8, just serve files from disk
+fn load_static_app(name: &str, data_dir: &str) -> Result<AppHandle, String> {
+    let app_dir = format!("{}/{}", data_dir, name);
+    let static_dir = format!("{}/static", app_dir);
+
+    if !std::path::Path::new(&static_dir).exists() {
+        return Err(format!("Static directory not found: {}", static_dir));
+    }
+
+    eprintln!("[platform:{}] loaded as static site (no V8)", name);
+
+    Ok(AppHandle {
+        name: name.to_string(),
+        is_static: true,
+        v8_tx: Mutex::new(None),
+        parked: AtomicBool::new(false),
+        last_activity: Mutex::new(Instant::now()),
+        sse_clients: Mutex::new(HashMap::new()),
+        session_paths: Mutex::new(HashMap::new()),
+        static_dir,
+        asset_dir: String::new(),
+        inline_css: None,
+        manifest: AssetManifest { files: HashMap::new(), reverse: HashMap::new() },
+        data_dir: data_dir.to_string(),
+        data_ctx: None,
+        auth: None,
     })
 }
 
@@ -587,6 +629,26 @@ fn handle_platform_connection(
         if let Some(app) = apps.get(app_name) {
             let app = Arc::clone(app);
             drop(apps); // release read lock
+
+            // ── Static apps: serve files directly, no V8 ────────
+            if app.is_static {
+                if method == "GET" || method == "HEAD" {
+                    let result = handle_static_get(
+                        &mut stream, &app, app_path, &extra_headers,
+                    );
+                    let ms = log_start.elapsed().as_millis();
+                    eprintln!("[platform:static] {} /apps/{}{} → ({}ms)", method, app_name, app_path, ms);
+                    return result;
+                } else {
+                    let msg = "{\"error\":\"Static apps only support GET requests\"}";
+                    let resp = format!(
+                        "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: application/json\r\n\
+                        Content-Length: {}\r\n\r\n", msg.len()
+                    );
+                    stream.write_all(resp.as_bytes())?;
+                    return stream.write_all(msg.as_bytes());
+                }
+            }
 
             match (method, app_path) {
                 // ── Auth routes ──────────────────────────────────
@@ -825,6 +887,72 @@ fn handle_platform_connection(
     stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
 }
 
+// ── Static file handler (SSG apps) ──────────────────────────────────
+
+fn handle_static_get(
+    stream: &mut TcpStream,
+    app: &AppHandle,
+    url_path: &str,
+    extra_headers: &HashMap<String, String>,
+) -> std::io::Result<()> {
+    let clean_path = url_path.split('?').next().unwrap_or("/");
+    let clean_path = clean_path.trim_start_matches('/');
+
+    // Security: reject path traversal
+    if clean_path.contains("..") {
+        return stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+    }
+
+    // Try file resolution:
+    //   /            → index.html
+    //   /components  → components/index.html
+    //   /style.css   → style.css
+    let base = &app.static_dir;
+    let file_path = if clean_path.is_empty() {
+        format!("{}/index.html", base)
+    } else {
+        let direct = format!("{}/{}", base, clean_path);
+        if std::path::Path::new(&direct).is_file() {
+            direct
+        } else {
+            // Try as directory with index.html
+            format!("{}/{}/index.html", base, clean_path)
+        }
+    };
+
+    let data = match std::fs::read(&file_path) {
+        Ok(d) => d,
+        Err(_) => {
+            // Fall back to index.html for SPA-like behavior (optional)
+            let msg = "<!DOCTYPE html><html><body><h1>404 — Not Found</h1></body></html>";
+            let eh = format_extra_headers(extra_headers);
+            let resp = format!(
+                "HTTP/1.1 404 Not Found\r\nContent-Type: text/html; charset=utf-8\r\n\
+                Content-Length: {}\r\n{}\r\n",
+                msg.len(), eh
+            );
+            stream.write_all(resp.as_bytes())?;
+            return stream.write_all(msg.as_bytes());
+        }
+    };
+
+    let ct = guess_content_type(&file_path);
+    let cache = if file_path.ends_with(".html") {
+        "public, max-age=60, must-revalidate"
+    } else {
+        "public, max-age=86400"
+    };
+
+    let eh = format_extra_headers(extra_headers);
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\
+        Cache-Control: {}\r\n{}\r\n",
+        ct, data.len(), cache, eh
+    );
+    stream.write_all(resp.as_bytes())?;
+    stream.write_all(&data)
+}
+
 // ── Deploy handler ──────────────────────────────────────────────────
 
 fn handle_deploy(
@@ -866,85 +994,148 @@ fn handle_deploy(
         }
     };
 
-    let bundle = payload.get("bundle").and_then(|v| v.as_str()).unwrap_or("");
-    if bundle.is_empty() {
-        let msg = "{\"error\":\"Missing 'bundle' field\"}";
-        let resp = format!(
-            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n\
-            Content-Length: {}\r\n\r\n", msg.len()
-        );
-        stream.write_all(resp.as_bytes())?;
-        return stream.write_all(msg.as_bytes());
-    }
-
-    // Write bundle and assets to disk
+    let is_static_deploy = payload.get("static").and_then(|v| v.as_bool()).unwrap_or(false);
     let app_dir = format!("{}/{}", platform.data_dir, name);
-    let public_dir = format!("{}/public", app_dir);
-    let _ = std::fs::create_dir_all(&public_dir);
 
-    std::fs::write(format!("{}/bundle.js", app_dir), bundle)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    if is_static_deploy {
+        // ── Static (SSG) deployment ──────────────────────────────────
+        let static_dir = format!("{}/static", app_dir);
+        // Clean previous static files
+        let _ = std::fs::remove_dir_all(&static_dir);
+        let _ = std::fs::create_dir_all(&static_dir);
+        // Remove bundle.js if switching from SSR to static
+        let _ = std::fs::remove_file(format!("{}/bundle.js", app_dir));
 
-    // Write data layer config (if present in payload)
-    if let Some(config_str) = payload.get("config").and_then(|v| v.as_str()) {
-        if !config_str.is_empty() && config_str != "null" {
-            let _ = std::fs::write(format!("{}/config.json", app_dir), config_str);
-            eprintln!("[platform] Saved data layer config for '{}'", name);
-        }
-    }
-
-    // Write assets
-    if let Some(assets) = payload.get("assets").and_then(|v| v.as_object()) {
-        for (filename, content) in assets {
-            if let Some(text) = content.as_str() {
-                // Security: prevent path traversal
-                if filename.contains("..") || filename.contains('/') { continue; }
-                let _ = std::fs::write(format!("{}/{}", public_dir, filename), text);
+        // Write static files (supports subdirectory paths like components/index.html)
+        let mut file_count = 0usize;
+        if let Some(assets) = payload.get("assets").and_then(|v| v.as_object()) {
+            for (filepath, content) in assets {
+                if let Some(text) = content.as_str() {
+                    if filepath.contains("..") { continue; }
+                    let full_path = format!("{}/{}", static_dir, filepath);
+                    // Create parent directories
+                    if let Some(parent) = std::path::Path::new(&full_path).parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&full_path, text);
+                    file_count += 1;
+                }
             }
         }
-    }
 
-    eprintln!("[platform] Deploying app: {}", name);
+        // Write static marker (so load detects it as static on restart)
+        let _ = std::fs::write(format!("{}/static.marker", app_dir), "ssg");
 
-    // Load (or reload) the app
-    match load_app(&name, &platform.data_dir) {
-        Ok(handle) => {
-            let app = Arc::new(handle);
-            let mut apps = platform.apps.write().unwrap();
-            // Old app handle is dropped, V8 thread will exit when channel closes
-            apps.insert(name.clone(), Arc::clone(&app));
-            drop(apps);
+        eprintln!("[platform] Deploying static app: {} ({} files)", name, file_count);
 
-            // Send the HTTP response BEFORE starting data threads.
-            // SSE sources can deliver events immediately, and the on_change
-            // callback sends to the V8 channel — which blocks if V8 is still
-            // initializing the bundle. That would deadlock the deploy handler.
-            let msg = format!(
-                "{{\"ok\":true,\"name\":\"{}\",\"url\":\"/apps/{}/\"}}",
-                name, name
-            );
-            let eh = format_extra_headers(extra_headers);
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
-                Content-Length: {}\r\n{}\r\n",
-                msg.len(), eh
-            );
-            stream.write_all(resp.as_bytes())?;
-            stream.write_all(msg.as_bytes())?;
-            eprintln!("[platform] ✓ App '{}' deployed at /apps/{}/", name, name);
-
-            // Start data threads (poll + SSE) after response is sent
-            start_data_threads(app);
-            Ok(())
+        match load_static_app(&name, &platform.data_dir) {
+            Ok(handle) => {
+                let app = Arc::new(handle);
+                platform.apps.write().unwrap().insert(name.clone(), Arc::clone(&app));
+                let msg = format!(
+                    "{{\"ok\":true,\"name\":\"{}\",\"url\":\"/apps/{}/\",\"static\":true,\"files\":{}}}",
+                    name, name, file_count
+                );
+                let eh = format_extra_headers(extra_headers);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                    Content-Length: {}\r\n{}\r\n",
+                    msg.len(), eh
+                );
+                stream.write_all(resp.as_bytes())?;
+                stream.write_all(msg.as_bytes())?;
+                eprintln!("[platform] ✓ Static app '{}' deployed at /apps/{}/", name, name);
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("{{\"error\":\"Static deploy failed: {}\"}}", e);
+                let resp = format!(
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\
+                    Content-Length: {}\r\n\r\n", msg.len()
+                );
+                stream.write_all(resp.as_bytes())?;
+                stream.write_all(msg.as_bytes())
+            }
         }
-        Err(e) => {
-            let msg = format!("{{\"error\":\"Deploy failed: {}\"}}", e);
+    } else {
+        // ── SSR deployment ───────────────────────────────────────────
+        let bundle = payload.get("bundle").and_then(|v| v.as_str()).unwrap_or("");
+        if bundle.is_empty() {
+            let msg = "{\"error\":\"Missing 'bundle' field\"}";
             let resp = format!(
-                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\
+                "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n\
                 Content-Length: {}\r\n\r\n", msg.len()
             );
             stream.write_all(resp.as_bytes())?;
-            stream.write_all(msg.as_bytes())
+            return stream.write_all(msg.as_bytes());
+        }
+
+        let public_dir = format!("{}/public", app_dir);
+        let _ = std::fs::create_dir_all(&public_dir);
+        // Remove static marker if switching from static to SSR
+        let _ = std::fs::remove_file(format!("{}/static.marker", app_dir));
+
+        std::fs::write(format!("{}/bundle.js", app_dir), bundle)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        // Write data layer config (if present in payload)
+        if let Some(config_str) = payload.get("config").and_then(|v| v.as_str()) {
+            if !config_str.is_empty() && config_str != "null" {
+                let _ = std::fs::write(format!("{}/config.json", app_dir), config_str);
+                eprintln!("[platform] Saved data layer config for '{}'", name);
+            }
+        }
+
+        // Write assets
+        if let Some(assets) = payload.get("assets").and_then(|v| v.as_object()) {
+            for (filename, content) in assets {
+                if let Some(text) = content.as_str() {
+                    // Security: prevent path traversal
+                    if filename.contains("..") || filename.contains('/') { continue; }
+                    let _ = std::fs::write(format!("{}/{}", public_dir, filename), text);
+                }
+            }
+        }
+
+        eprintln!("[platform] Deploying app: {}", name);
+
+        // Load (or reload) the app
+        match load_app(&name, &platform.data_dir) {
+            Ok(handle) => {
+                let app = Arc::new(handle);
+                let mut apps = platform.apps.write().unwrap();
+                // Old app handle is dropped, V8 thread will exit when channel closes
+                apps.insert(name.clone(), Arc::clone(&app));
+                drop(apps);
+
+                // Send the HTTP response BEFORE starting data threads.
+                let msg = format!(
+                    "{{\"ok\":true,\"name\":\"{}\",\"url\":\"/apps/{}/\"}}",
+                    name, name
+                );
+                let eh = format_extra_headers(extra_headers);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                    Content-Length: {}\r\n{}\r\n",
+                    msg.len(), eh
+                );
+                stream.write_all(resp.as_bytes())?;
+                stream.write_all(msg.as_bytes())?;
+                eprintln!("[platform] ✓ App '{}' deployed at /apps/{}/", name, name);
+
+                // Start data threads (poll + SSE) after response is sent
+                start_data_threads(app);
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("{{\"error\":\"Deploy failed: {}\"}}", e);
+                let resp = format!(
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\
+                    Content-Length: {}\r\n\r\n", msg.len()
+                );
+                stream.write_all(resp.as_bytes())?;
+                stream.write_all(msg.as_bytes())
+            }
         }
     }
 }
