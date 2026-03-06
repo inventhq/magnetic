@@ -1,4 +1,4 @@
 {
   "name": "docs",
-  "server": "http://localhost:3003"
+  "server": "https://api.fujs.dev"
 }

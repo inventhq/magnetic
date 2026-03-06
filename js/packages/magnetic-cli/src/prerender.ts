@@ -176,8 +176,23 @@ const VOID_ELEMENTS = new Set([
   'link', 'meta', 'param', 'source', 'track', 'wbr',
 ]);
 
+/** Recursively extract plain text from a DomNode tree (for <title> etc.) */
+function textContent(node: DomNode): string {
+  let out = '';
+  if (node.text != null) out += node.text;
+  if (node.children) {
+    for (const child of node.children) out += textContent(child);
+  }
+  return out;
+}
+
 function renderNodeToHTML(node: DomNode): string {
   if (node.tag === 'magnetic:head') return '';
+
+  // <title> must contain plain text only, not child elements
+  if (node.tag === 'title') {
+    return `<title>${escHTML(textContent(node))}</title>`;
+  }
 
   let html = `<${node.tag}`;
   if (node.key) html += ` data-key="${escAttr(node.key)}"`;

@@ -67,9 +67,24 @@ export function extractHead(root: DomNode): ExtractedHead {
  * Events become `data-a_<event>` attributes (Magnetic's event delegation).
  * Keys become `data-key` attributes for client-side reconciliation.
  */
+/** Recursively extract plain text from a DomNode tree (for <title> etc.) */
+function textContent(node: DomNode): string {
+  let out = '';
+  if (node.text != null) out += node.text;
+  if (node.children) {
+    for (const child of node.children) out += textContent(child);
+  }
+  return out;
+}
+
 export function renderToHTML(node: DomNode): string {
   // Skip magnetic:head nodes in HTML output
   if (node.tag === 'magnetic:head') return '';
+
+  // <title> must contain plain text only, not child elements
+  if (node.tag === 'title') {
+    return `<title>${esc(textContent(node))}</title>`;
+  }
 
   let html = `<${node.tag}`;
 
