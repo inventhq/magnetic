@@ -1,13 +1,13 @@
 {
   "name": "@magneticjs/cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Magnetic CLI — build, dev, and deploy server-driven UI apps",
   "type": "module",
   "bin": {
     "magnetic": "./dist/cli.js"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js --external:esbuild",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js --external:esbuild --external:@magneticjs/openapi",
     "dev": "tsx src/cli.ts",
     "postinstall": "node scripts/install-server.js || true"
   },
