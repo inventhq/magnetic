@@ -5,6 +5,7 @@ import { getContent, listContent } from '@magneticjs/server/content';
 
 export interface DocsState {
   currentSlug: string;
+  _navActive?: boolean;
 }
 
 export function initialState(): DocsState {
@@ -14,23 +15,29 @@ export function initialState(): DocsState {
 export function reduce(state: DocsState, action: string, payload: any): DocsState {
   const m = action.match(/^navigate_doc_(.+)$/);
   if (m) {
-    return { ...state, currentSlug: m[1] };
+    return { ...state, currentSlug: m[1], _navActive: true };
   }
 
   if (action === 'navigate' && payload?.path) {
     const path = payload.path as string;
     const slug = path === '/' || path === '' ? 'getting-started' : path.replace(/^\//, '').replace(/\/$/, '');
-    return { ...state, currentSlug: slug };
+    return { ...state, currentSlug: slug, _navActive: true };
   }
 
   return state;
 }
 
 export function toViewModel(state: DocsState, path?: string) {
-  // Determine slug: URL path takes priority, then state, then default
-  const slug = path && path !== '/'
-    ? path.replace(/^\//, '').replace(/\/$/, '')
-    : state.currentSlug;
+  // After a navigation action, state.currentSlug is authoritative.
+  // On initial render (no action yet), derive slug from the request path.
+  let slug: string;
+  if (state._navActive) {
+    slug = state.currentSlug;
+  } else if (path && path !== '/') {
+    slug = path.replace(/^\//, '').replace(/\/$/, '');
+  } else {
+    slug = state.currentSlug;
+  }
 
   const allDocs = listContent();
   const sorted = allDocs.sort((a, b) => (a.meta.order || 99) - (b.meta.order || 99));
