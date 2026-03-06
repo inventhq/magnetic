@@ -166,7 +166,7 @@ function scanDir(dir: string, pathPrefix: string, pages: PageEntry[], rootPagesD
     if (nameNoExt.startsWith('_') && !CATCH_ALL_NAMES.includes(nameNoExt.toLowerCase())) continue;
     if (nameNoExt === 'layout') continue;
 
-    const importName = nameNoExt;
+    let importName = nameNoExt;
     const nameLower = nameNoExt.toLowerCase().replace(/page$/, '');
 
     let routePath: string;
@@ -181,6 +181,8 @@ function scanDir(dir: string, pathPrefix: string, pages: PageEntry[], rootPagesD
       // Dynamic param: [id].tsx → /:id
       const param = nameNoExt.slice(1, -1);
       routePath = pathPrefix + '/:' + param;
+      // Sanitize import name: [slug] → _slug_Page
+      importName = '_' + param + '_Page';
     } else {
       routePath = pathPrefix + '/' + nameLower;
     }
@@ -314,7 +316,7 @@ export function generateBridge(scan: AppScan, config?: MagneticAppConfig, design
   lines.push('  try {');
   lines.push('    var st = __getState(sid);');
   lines.push('    const merged = Object.assign({}, __magneticData, st);');
-  lines.push('    const vm = toViewModel(merged);');
+  lines.push('    const vm = toViewModel(merged, path);');
   lines.push('    const result = router.resolve(path, vm);');
   if (catchAllPage) {
     lines.push(`    if (!result) return ${catchAllPage.importName}({ params: {} });`);

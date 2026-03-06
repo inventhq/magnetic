@@ -26,22 +26,27 @@ export function reduce(state: DocsState, action: string, payload: any): DocsStat
   return state;
 }
 
-export function toViewModel(state: DocsState) {
+export function toViewModel(state: DocsState, path?: string) {
+  // Determine slug: URL path takes priority, then state, then default
+  const slug = path && path !== '/'
+    ? path.replace(/^\//, '').replace(/\/$/, '')
+    : state.currentSlug;
+
   const allDocs = listContent();
   const sorted = allDocs.sort((a, b) => (a.meta.order || 99) - (b.meta.order || 99));
 
-  const current = getContent(state.currentSlug);
+  const current = getContent(slug);
 
   const sidebar = sorted.map(doc => ({
     slug: doc.slug,
     title: doc.meta.title || doc.slug,
-    active: doc.slug === state.currentSlug,
+    active: doc.slug === slug,
     href: '/' + doc.slug,
   }));
 
   return {
     sidebar,
-    currentSlug: state.currentSlug,
+    currentSlug: slug,
     title: current?.meta?.title || 'Magnetic Docs',
     description: current?.meta?.description || '',
     contentHtml: current?.html || '<p>Page not found.</p>',
