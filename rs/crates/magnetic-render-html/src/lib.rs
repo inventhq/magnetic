@@ -156,6 +156,13 @@ fn write_node(node: &DomNode, buf: &mut String) {
 
     buf.push('>');
 
+    // <title> must contain plain text only, not child elements
+    if node.tag == "title" {
+        buf.push_str(&escape_html(&text_content(node)));
+        buf.push_str("</title>");
+        return;
+    }
+
     // Raw HTML (dangerouslySetInnerHTML) — injected without escaping
     if let Some(html) = &node.html {
         buf.push_str(html);
@@ -192,12 +199,27 @@ fn extract_head_html(node: &DomNode, buf: &mut String) {
     }
 }
 
+/// Recursively extract plain text from a DomNode tree (for <title> etc.)
+fn text_content(node: &DomNode) -> String {
+    let mut out = String::new();
+    if let Some(text) = &node.text {
+        out.push_str(text);
+    }
+    for child in node.children_iter() {
+        out.push_str(&text_content(child));
+    }
+    out
+}
+
 /// Extract the text content of a <title> node inside <magnetic:head>
 fn extract_title(node: &DomNode) -> Option<String> {
     if node.is_head() {
         for child in node.children_iter() {
             if child.tag == "title" {
-                return child.text.clone();
+                let t = text_content(child);
+                if !t.is_empty() {
+                    return Some(t);
+                }
             }
         }
         return None;
