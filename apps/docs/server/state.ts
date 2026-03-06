@@ -36,7 +36,7 @@ export function toViewModel(state: DocsState, path?: string) {
     slug: doc.slug,
     title: doc.meta.title || doc.slug,
     active: doc.slug === slug,
-    href: '/' + doc.slug,
+    href: doc.slug,
   }));
 
   return {
