@@ -550,4 +550,4 @@ GET /health
 
 ---
 
-← [Examples & Patterns](/examples) · **Chapter 8** · [Back to Introduction](/)
+← [Examples & Patterns](/examples) · **Chapter 8** · [Errors & Troubleshooting →](/errors)

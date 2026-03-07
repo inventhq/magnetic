@@ -125,9 +125,9 @@ This means `key_id` must be unique within a `(tenant, entity)` pair. If you inse
 
 ---
 
-## Queries as Geometry
+## How Queries Work
 
-Every query defines a **bounding box** in the dimension space. You specify constraints on any subset of dimensions, and BitBin finds all records that fall within that box.
+A query has two parts: **what to filter** (`space`) and **what to compute** (`measure`). You describe the records you want, and BitBin finds them.
 
 ```json
 {
@@ -138,9 +138,21 @@ Every query defines a **bounding box** in the dimension space. You specify const
 
 This is equivalent to: "Count all records where tenant=1 AND amount>500 AND region=3."
 
+### Filter types
+
 - **Exact match:** `"region": 3` → region = 3
 - **Range:** `"amount": [500, null]` → amount > 500
-- **Unconstrained:** omit the dimension entirely — zero cost
+- **Unconstrained:** omit a field entirely — it's free, not scanned
+
+Think of it like metadata filtering in a vector database: you tag each record with structured fields, then query by combining any subset of those fields. The difference is that BitBin evaluates all fields simultaneously — you don't pick one "index" to query through. Every field is always indexed, always fast.
+
+| If you've used... | BitBin equivalent |
+|---|---|
+| Pinecone `filter: {"genre": "comedy", "year": {"$gte": 2020}}` | `"space": {"category": 5, "key_id": [2020, null]}` |
+| Qdrant `must: [{key: "city", match: {value: "Berlin"}}]` | `"space": {"region": 7}` |
+| SQL `WHERE status = 1 AND amount > 500` | `"space": {"status": 1, "amount": [500, null]}` |
+
+No index configuration, no filter plans, no "filterable attributes" to declare up front. Every field is queryable out of the box.
 
 The result includes a `query_us` field showing execution time in microseconds. Typical queries complete in 1–50µs.
 
@@ -169,7 +181,7 @@ Pipelines support three trigger types:
 - **`on_insert`** — fire automatically when matching records are inserted
 - **`on_schedule`** — fire on a time interval
 
-See [Pipelines](/pipelines) for the full step reference.
+See [Pipelines](/${1#./}) for the full step reference.
 
 ---
 
@@ -189,4 +201,4 @@ See [Pipelines](/pipelines) for the full step reference.
 
 ---
 
-[← Previous: Getting Started](/getting-started) · **Chapter 2** · [Next: Query Language →](/query-language)
+[← Previous: Getting Started](/${1#./}) · **Chapter 2** · [Next: Query Language →](/${1#./})

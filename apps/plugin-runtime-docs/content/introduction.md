@@ -81,6 +81,9 @@ Build connectors that ingest data from external APIs. Webhook verification and n
 ### Chapter 8: [Management API](/management-api)
 REST endpoint reference for managing plugins, connectors, pollers, backfills, schemas, named views, MCP server, OAuth, ingest tokens, and health checks. Every `curl` command you need.
 
+### Chapter 9: [Errors & Troubleshooting](/errors)
+Error visibility channels, auto-disable behavior, common error messages with fixes, debugging checklist, error handling best practices, and execution limits reference.
+
 ---
 
 ## Quick Reference
