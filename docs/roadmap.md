@@ -1,8 +1,40 @@
-# Future: CRDTs / Operational Transforms for Collaborative State
+# Roadmap
 
-## Current Design (Per-Session State)
+> Future work items and design notes for Magnetic platform development.
 
-As of this implementation, each SSE client gets its own isolated state:
+## Active Backlog
+
+### R2 Content Storage (Low Priority)
+Store `.md` content files in Cloudflare R2 instead of baking them into the bundle or reading from local disk. This would allow content updates without redeploy — just upload a new `.md` file to R2.
+
+**Applies to**:
+- SSG lazy content mode (load from R2 during build)
+- SSR runtime content loading (fetch from R2 on request)
+
+**Design sketch**:
+- `magnetic.json` gets a `"content": { "source": "r2", "bucket": "..." }` field
+- CLI uploads content to R2 during `magnetic push`
+- Server fetches content from R2 on `getContent(slug)` calls (with local cache)
+
+### GLiNER Integration (Low Priority)
+Entity extraction for structured data from unstructured text. Would enable automatic tagging, categorization, and search indexing of content.
+
+### Bot/Flood Rate Limiter Hardening
+Basic rate limiting middleware exists. Needs:
+- Per-app configurable limits
+- IP-based throttling
+- Graceful 429 responses with Retry-After headers
+
+### JSON Payload Compression
+Compress DOM snapshot payloads (SSE and action responses) with Brotli for large pages. Currently sent as raw JSON (~15KB per snapshot for typical apps).
+
+---
+
+## Future: CRDTs / Operational Transforms for Collaborative State
+
+### Current Design (Per-Session State)
+
+Each SSE client gets its own isolated state:
 - `Map<session_id, State>` in V8 — one state per browser session
 - Actions from User A only affect User A's state
 - SSE broadcasts only go to the originating session
@@ -10,7 +42,7 @@ As of this implementation, each SSE client gets its own isolated state:
 
 This is correct for single-user apps (dashboards, admin panels, personal tools).
 
-## When CRDTs/OTs Would Be Needed
+### When CRDTs/OTs Would Be Needed
 
 If Magnetic wants to support **collaborative features** (Google Docs-style real-time editing, shared whiteboards, multiplayer games), per-session state is insufficient. Multiple users need to:
 
@@ -45,13 +77,13 @@ If Magnetic wants to support **collaborative features** (Google Docs-style real-
   ```
 - Rust server maintains CRDT merge logic; V8 bridge merges shared + private state before `toViewModel()`
 
-## Implementation Sketch
+### Implementation Sketch
 
 1. Add `SharedState` struct in Rust with CRDT-backed fields
 2. Actions targeting shared keys broadcast merged state to ALL sessions
 3. Actions targeting private keys only affect the originating session (current behavior)
 4. V8 bridge: `toViewModel(Object.assign({}, sharedState, sessionState))`
 
-## Priority
+### Priority
 
-Low — no immediate need. Per-session state solves the critical bug. CRDT support is a future differentiator for collaborative apps.
+Low — no immediate need. Per-session state covers current use cases. CRDT support is a future differentiator for collaborative apps.

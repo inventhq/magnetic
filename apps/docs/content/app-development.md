@@ -626,7 +626,7 @@ Data sources are fetched server-side and injected as props:
 }
 ```
 
-Routes listed in `prerender` are pre-rendered to static HTML at deploy time and served directly from disk. All other routes render dynamically as normal. Use `/*` globs to pre-render all content under a prefix (e.g., `"/blog/*"` pre-renders every blog post). See [Hybrid Pre-render](/hybrid-prerender) for details.
+Routes listed in `prerender` are pre-rendered to static HTML at deploy time and served directly from disk. All other routes render dynamically as normal. Use `/*` globs to pre-render all content under a prefix (e.g., `"/blog/*"` pre-renders every blog post). See [Deployment](/deployment) for details.
 
 ### With Actions (API forwarding)
 
@@ -837,3 +837,7 @@ import { Head, Link } from '@magneticjs/server/jsx-runtime'; // ✅
 | Rendering | Server renders → DOM snapshot → SSE push | Client React → virtual DOM → reconcile |
 | Bundle size | ~2KB client + 0 framework JS | 80-150KB+ |
 | Hydration | None (no client framework) | Required (framework bootstrap) |
+
+---
+
+← [Previous: Getting Started](/getting-started) · **Chapter 2** · [Next: Component Patterns →](/components)

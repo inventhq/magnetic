@@ -8,13 +8,13 @@ export interface DocsState {
 }
 
 export function initialState(): DocsState {
-  return { currentSlug: 'getting-started' };
+  return { currentSlug: 'introduction' };
 }
 
 export function reduce(state: DocsState, action: string, payload: any): DocsState {
   if (action === 'navigate' && payload?.path) {
     const path = payload.path as string;
-    const slug = path === '/' || path === '' ? 'getting-started' : path.replace(/^\//, '').replace(/\/$/, '');
+    const slug = path === '/' || path === '' ? 'introduction' : path.replace(/^\//, '').replace(/\/$/, '');
     return { ...state, currentSlug: slug };
   }
 
@@ -25,7 +25,7 @@ export function toViewModel(state: DocsState, path?: string) {
   // Derive slug from the request path (server updates session path on navigate)
   const slug = path && path !== '/'
     ? path.replace(/^\//, '').replace(/\/$/, '')
-    : state.currentSlug;
+    : 'introduction';
 
   const allDocs = listContent();
   const sorted = allDocs.sort((a, b) => (a.meta.order || 99) - (b.meta.order || 99));

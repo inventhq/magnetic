@@ -2,7 +2,7 @@
 title: Benchmarks
 description: Performance measurements vs Next.js, Remix, HTMX, and other frameworks.
 layout: docs
-order: 5
+order: 6
 ---
 
 # Magnetic Performance Benchmarks
@@ -118,3 +118,7 @@ The same server powers all platforms:
 | Native mobile | **Built-in** | None (separate codebase) |
 
 Magnetic's structural advantage: the server renders everything, the client is a thin patcher. This inverts the typical SPA model where the client does all the work.
+
+---
+
+← [Previous: Deployment](/deployment) · **Chapter 6** · End of docs

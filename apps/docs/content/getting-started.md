@@ -423,8 +423,11 @@ import { Head, Link } from '@magneticjs/server/jsx-runtime';
 - [Component Patterns](/components) — Building reusable components
 - [CSS & Styling](/css-styling) — Design tokens, utility classes, custom CSS
 - [Benchmarks](/benchmarks) — Performance measurements vs other frameworks
-- [Static Site Generation](/static-site-generation) — SSG, lazy content, deployment
-- [Hybrid Pre-render](/hybrid-prerender) — Mix static + dynamic pages in one app
+- [Deployment](/deployment) — SSR deploy, SSG, hybrid pre-render
 - [npm: @magneticjs/cli](https://www.npmjs.com/package/@magneticjs/cli) — CLI package
 - [npm: @magneticjs/server](https://www.npmjs.com/package/@magneticjs/server) — JSX runtime
 - [GitHub](https://github.com/inventhq/magnetic) — Source code
+
+---
+
+← [Previous: Introduction](/introduction) · **Chapter 1** · [Next: App Development →](/app-development)

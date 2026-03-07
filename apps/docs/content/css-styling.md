@@ -772,3 +772,7 @@ If you need to verify a class name or understand how something works:
 | `apps/task-board/public/style.css` | Real-world custom CSS example (23 lines) |
 | `apps/task-board/pages/TasksPage.tsx` | Utility classes in use |
 | `apps/task-board/components/TaskCard.tsx` | Dynamic classes from toViewModel |
+
+---
+
+← [Previous: Component Patterns](/components) · **Chapter 4** · [Next: Deployment →](/deployment)
