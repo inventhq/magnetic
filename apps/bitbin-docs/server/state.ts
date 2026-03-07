@@ -1,6 +1,3 @@
-// state.ts — Docs app state management
-// Uses the content pipeline: __content map is injected at build time
-
 import { getContent, listContent } from '@magneticjs/server/content';
 
 export interface DocsState {
@@ -17,19 +14,16 @@ export function reduce(state: DocsState, action: string, payload: any): DocsStat
     const slug = path === '/' || path === '' ? 'introduction' : path.replace(/^\//, '').replace(/\/$/, '');
     return { ...state, currentSlug: slug };
   }
-
   return state;
 }
 
 export function toViewModel(state: DocsState, path?: string) {
-  // Derive slug from the request path (server updates session path on navigate)
   const slug = path && path !== '/'
     ? path.replace(/^\//, '').replace(/\/$/, '')
     : 'introduction';
 
   const allDocs = listContent();
   const sorted = allDocs.sort((a, b) => (a.meta.order ?? 99) - (b.meta.order ?? 99));
-
   const current = getContent(slug);
 
   const sidebar = sorted.map(doc => ({
@@ -42,7 +36,7 @@ export function toViewModel(state: DocsState, path?: string) {
   return {
     sidebar,
     currentSlug: slug,
-    title: current?.meta?.title || 'Magnetic Docs',
+    title: current?.meta?.title || 'BitBin Docs',
     description: current?.meta?.description || '',
     contentHtml: current?.html || '<p>Page not found.</p>',
   };
