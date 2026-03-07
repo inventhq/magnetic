@@ -154,7 +154,7 @@ export default defineConnector({
 });
 ```
 
-See [connectors.md](./connectors.md) for the full connector guide.
+See [connectors.md](/connectors) for the full connector guide.
 
 ---
 
@@ -218,4 +218,4 @@ curl -X PATCH https://plugins.juicyapi.com/plugins/<id> \
 
 ---
 
-← [Introduction](./index.md) · **Chapter 1** · [Plugin Configuration →](./plugin-json.md)
+← [Introduction](/) · **Chapter 1** · [Plugin Configuration →](/plugin-json)

@@ -812,4 +812,4 @@ export default definePlugin({
 
 ---
 
-← [Connectors](./connectors.md) · **Chapter 7** · [Management API →](./management-api.md)
+← [Connectors](/connectors) · **Chapter 7** · [Management API →](/management-api)

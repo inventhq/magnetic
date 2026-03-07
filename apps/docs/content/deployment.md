@@ -230,6 +230,73 @@ Your page components work identically in all modes. The `href` attribute on `<Li
 
 The `content/` folder is the single source of truth in all modes — same markdown files, same `getContent()`/`listContent()` API, same page components. Only the serving behavior differs.
 
+## Deploying a Documentation Site
+
+Magnetic's SSG mode is purpose-built for deploying documentation from a folder of markdown files. Here's how to turn any collection of `.md` files into a live docs site with sidebar navigation, dark theme, and chapter ordering.
+
+### Required Structure
+
+```
+apps/<name>/
+├── content/              ← markdown files with frontmatter
+│   ├── introduction.md   ← homepage content (order: 0)
+│   ├── getting-started.md
+│   └── ...
+├── pages/
+│   ├── IndexPage.tsx     ← sidebar + content layout
+│   └── [slug].tsx        ← dynamic route (re-exports IndexPage)
+├── server/
+│   └── state.ts          ← sidebar generation, content lookup
+├── public/
+│   └── style.css         ← sidebar layout + prose styling
+├── magnetic.json         ← app name + server URL
+├── design.json           ← theme tokens (dark theme)
+└── tsconfig.json
+```
+
+### Content Files
+
+Each `.md` file needs YAML frontmatter with `title` and `order`:
+
+```markdown
+---
+title: Getting Started
+order: 1
+---
+
+# Getting Started
+
+Your content here...
+```
+
+The `order` field controls sidebar position — `0` appears first. The file named `introduction.md` becomes the homepage (`/`).
+
+**Important**: Internal links must use route paths, not file paths. Use `[Link Text](/getting-started)` — not `[Link Text](./getting-started.md)`. Links ending in `.md` will 404 on the deployed site.
+
+### Scaffolding from Existing Markdown
+
+If you have a folder of `.md` files without frontmatter:
+
+1. Copy files into `content/`, renaming `index.md` → `introduction.md`
+2. Prepend frontmatter to each file with the correct `title` and `order`
+3. Fix all internal links: replace `(./file.md)` with `(/route-path)`
+4. Copy `pages/`, `server/`, `public/`, and config files from an existing docs app (e.g., `apps/docs/`)
+5. Customize `IndexPage.tsx` with your product name and tagline
+
+### Deploy
+
+```bash
+magnetic push --static --dir apps/<name>
+```
+
+### Reference Implementations
+
+| Site | Source | Chapters |
+|------|--------|----------|
+| Magnetic Docs | `apps/docs/` | 7 |
+| Plugin Runtime Docs | `apps/plugin-runtime-docs/` | 9 |
+| BitBin Docs | `apps/bitbin-docs/` | 13 |
+
 ---
 
 ← [Previous: CSS & Styling](/css-styling) · **Chapter 5** · [Next: Benchmarks →](/benchmarks)

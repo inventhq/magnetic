@@ -87,7 +87,7 @@ The server pushes the pipe's query result whenever the underlying data changes.
 
 ## WebSocket Subscriptions
 
-For higher performance, use the WebSocket protocol at `GET /ws/db`. See [WebSocket Protocol](./websocket.md) for the full specification.
+For higher performance, use the WebSocket protocol at `GET /ws/db`. See [WebSocket Protocol](/websocket) for the full specification.
 
 ### Subscribe (binary)
 
@@ -185,4 +185,4 @@ multi.close()
 
 ---
 
-[← Previous: Data Operations](./data-operations.md) · **Chapter 5** · [Next: WebSocket Protocol →](./websocket.md)
+[← Previous: Data Operations](/data-operations) · **Chapter 5** · [Next: WebSocket Protocol →](/websocket)

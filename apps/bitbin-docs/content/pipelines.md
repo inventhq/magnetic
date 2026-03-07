@@ -182,4 +182,4 @@ All three use the composite key `(tenant, entity, key_id)` to locate the record 
 
 ---
 
-[← Previous: WebSocket Protocol](./websocket.md) · **Chapter 7** · [Next: Examples & Recipes →](./examples.md)
+[← Previous: WebSocket Protocol](/websocket) · **Chapter 7** · [Next: Examples & Recipes →](/examples)

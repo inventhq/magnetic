@@ -52,27 +52,27 @@ Every database instance gets a unique subdomain: `https://{uuid}.machx.dev`
 
 | # | Chapter | Description |
 |---|---|---|
-| 1 | [Getting Started](./getting-started.md) | Sign up, provision a database, first query in 5 minutes |
-| 2 | [Core Concepts](./concepts.md) | Schema model, tenants, entities, dimensions, record layout |
-| 3 | [Query Language](./query-language.md) | Filters, measures, joins, unions, group-by, top-k |
-| 4 | [Data Operations](./data-operations.md) | Ingest, keyed CRUD, batch mutations, schema management |
-| 5 | [Real-Time Subscriptions](./realtime.md) | SSE push, multiplexed queries, pipe streams |
-| 6 | [WebSocket Protocol](./websocket.md) | Binary protocol for SDKs and high-throughput apps |
-| 7 | [Pipelines](./pipelines.md) | Atomic multi-step operations, triggers, stored procedures |
-| 8 | [Examples & Recipes](./examples.md) | Common patterns: e-commerce, IoT, dashboards, SaaS metrics |
-| 9 | [Platform API](./platform.md) | Authentication, accounts, databases, teams, API keys |
-| 10 | [API Reference](./api-reference.md) | Complete HTTP endpoint catalog |
-| 11 | [SQL Migration Guide](./sql-migration.md) | Coming from SQL? Every concept mapped to BitBin |
-| 12 | [Plugin Integration](./plugin-integration.md) | Plugin runtime ↔ BitBin data layer spec |
+| 1 | [Getting Started](/getting-started) | Sign up, provision a database, first query in 5 minutes |
+| 2 | [Core Concepts](/concepts) | Schema model, tenants, entities, dimensions, record layout |
+| 3 | [Query Language](/query-language) | Filters, measures, joins, unions, group-by, top-k |
+| 4 | [Data Operations](/data-operations) | Ingest, keyed CRUD, batch mutations, schema management |
+| 5 | [Real-Time Subscriptions](/realtime) | SSE push, multiplexed queries, pipe streams |
+| 6 | [WebSocket Protocol](/websocket) | Binary protocol for SDKs and high-throughput apps |
+| 7 | [Pipelines](/pipelines) | Atomic multi-step operations, triggers, stored procedures |
+| 8 | [Examples & Recipes](/examples) | Common patterns: e-commerce, IoT, dashboards, SaaS metrics |
+| 9 | [Platform API](/platform) | Authentication, accounts, databases, teams, API keys |
+| 10 | [API Reference](/api-reference) | Complete HTTP endpoint catalog |
+| 11 | [SQL Migration Guide](/sql-migration) | Coming from SQL? Every concept mapped to BitBin |
+| 12 | [Plugin Integration](/plugin-integration) | Plugin runtime ↔ BitBin data layer spec |
 
 ---
 
 ## Quick Links
 
-- **First time?** Start with [Getting Started](./getting-started.md)
-- **Coming from SQL?** Read the [SQL Migration Guide](./sql-migration.md)
-- **Building a plugin?** See [Plugin Integration](./plugin-integration.md)
-- **Need the full API?** Jump to [API Reference](./api-reference.md)
+- **First time?** Start with [Getting Started](/getting-started)
+- **Coming from SQL?** Read the [SQL Migration Guide](/sql-migration)
+- **Building a plugin?** See [Plugin Integration](/plugin-integration)
+- **Need the full API?** Jump to [API Reference](/api-reference)
 
 ---
 
@@ -94,4 +94,4 @@ Every database instance gets a unique subdomain: `https://{uuid}.machx.dev`
 
 ---
 
-[Next: Getting Started →](./getting-started.md)
+[Next: Getting Started →](/getting-started)

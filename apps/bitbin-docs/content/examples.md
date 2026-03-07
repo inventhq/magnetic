@@ -7,7 +7,7 @@ order: 8
 
 **Common patterns and complete working examples for BitBin.**
 
-Each example includes the full curl commands you can copy-paste. Replace `{subdomain}` and `YOUR_API_KEY` with your actual values from [Getting Started](./getting-started.md).
+Each example includes the full curl commands you can copy-paste. Replace `{subdomain}` and `YOUR_API_KEY` with your actual values from [Getting Started](/getting-started).
 
 ---
 
@@ -559,4 +559,4 @@ curl -X POST https://{subdomain}.machx.dev/pipeline \
 
 ---
 
-[← Previous: Pipelines](./pipelines.md) · **Chapter 8** · [Next: Platform API →](./platform.md)
+[← Previous: Pipelines](/pipelines) · **Chapter 8** · [Next: Platform API →](/platform)

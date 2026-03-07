@@ -169,7 +169,7 @@ Pipelines support three trigger types:
 - **`on_insert`** — fire automatically when matching records are inserted
 - **`on_schedule`** — fire on a time interval
 
-See [Pipelines](./pipelines.md) for the full step reference.
+See [Pipelines](/pipelines) for the full step reference.
 
 ---
 
@@ -189,4 +189,4 @@ See [Pipelines](./pipelines.md) for the full step reference.
 
 ---
 
-[← Previous: Getting Started](./getting-started.md) · **Chapter 2** · [Next: Query Language →](./query-language.md)
+[← Previous: Getting Started](/getting-started) · **Chapter 2** · [Next: Query Language →](/query-language)

@@ -47,7 +47,7 @@ Your Plugin (V8 Sandbox) ─────── Executes your code
 ## Who is this for?
 
 - **Plugin developers** building integrations, automations, analytics, or AI agents on top of the event pipeline
-- **AI coding agents** that generate plugin code programmatically (see [SDK Reference](./sdk-reference.md) for type-safe API documentation)
+- **AI coding agents** that generate plugin code programmatically (see [SDK Reference](/sdk-reference) for type-safe API documentation)
 
 You do **not** need access to the Rust source code, the Kubernetes cluster, or any infrastructure. Everything is done through the SDK, CLI, and REST API.
 
@@ -57,28 +57,28 @@ You do **not** need access to the Rust source code, the Kubernetes cluster, or a
 
 Read these in order for a complete understanding, or jump to any chapter:
 
-### Chapter 1: [Getting Started](./getting-started.md)
+### Chapter 1: [Getting Started](/getting-started)
 Install the CLI, scaffold your first project, write a plugin, deploy it, and view logs. **Start here** if you're new.
 
-### Chapter 2: [Plugin Configuration](./plugin-json.md)
+### Chapter 2: [Plugin Configuration](/plugin-json)
 The `plugin.json` file — event subscriptions, domain allowlists, runtime config, connector settings. Everything that controls how your plugin behaves without changing code.
 
-### Chapter 3: [SDK Reference](./sdk-reference.md)
+### Chapter 3: [SDK Reference](/sdk-reference)
 Complete API documentation for `runtime.*`, `RuntimeHelper`, `defineTable`, `definePlugin`, `defineConnector`, and all global functions. The authoritative reference for every method, parameter, and return type.
 
-### Chapter 4: [Database Guide](./database.md)
+### Chapter 4: [Database Guide](/database)
 Create relational tables with `defineTable`, run SQL queries, perform joins, discover schemas, and handle sub-tenant data isolation. SQLite-compatible, auto-namespaced per plugin.
 
-### Chapter 5: [BitBin Analytics](./bitbin.md)
+### Chapter 5: [BitBin Analytics](/bitbin)
 Real-time analytics queries, high-throughput data ingestion, vector search (nearest-neighbor over embeddings), saved data pipelines, and a key-value document store — all via `runtime.bitbin`.
 
-### Chapter 6: [Connectors](./connectors.md)
+### Chapter 6: [Connectors](/connectors)
 Build connectors that ingest data from external APIs. Webhook verification and normalization, scheduled polling with cursor-based pagination, historical backfill, OAuth auto-refresh, and built-in Stripe/Shopify helpers.
 
-### Chapter 7: [Examples & Patterns](./examples.md)
+### Chapter 7: [Examples & Patterns](/examples)
 11 complete, copy-pasteable plugin examples: echo, event counter, CRUD data store, event-driven pipeline, Slack notifier, AI/LLM agent, full Stripe connector, multi-table joins, sub-tenant scoped app, BitBin analytics dashboard, and semantic search.
 
-### Chapter 8: [Management API](./management-api.md)
+### Chapter 8: [Management API](/management-api)
 REST endpoint reference for managing plugins, connectors, pollers, backfills, schemas, named views, MCP server, OAuth, ingest tokens, and health checks. Every `curl` command you need.
 
 ---
@@ -114,4 +114,4 @@ plugin logs --follow
 
 Your plugin is now live — receiving events and executing your code in a secure sandbox.
 
-→ **Next:** [Getting Started](./getting-started.md)
+→ **Next:** [Getting Started](/getting-started)

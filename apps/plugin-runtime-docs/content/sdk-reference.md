@@ -35,7 +35,7 @@ These are injected into every plugin's V8 isolate. Use them directly — no impo
 | `assertShape(obj, schema, label)` | Validate object shape |
 | `validateNormalizedEvent(event)` | Validate + coerce a `NormalizedEvent` |
 
-**Provider-specific globals** (Stripe, Shopify) are also available — see [Examples](./examples.md).
+**Provider-specific globals** (Stripe, Shopify) are also available — see [Examples](/examples).
 
 ---
 
@@ -247,7 +247,7 @@ runtime.bitbin.doc.delete(...)
 runtime.bitbin.doc.list(...)
 ```
 
-See [BitBin Guide](./bitbin.md) for full documentation.
+See [BitBin Guide](/bitbin) for full documentation.
 
 ---
 
@@ -317,7 +317,7 @@ export default definePlugin({
 
 ## defineTable
 
-Creates a typed table helper with CRUD operations. See [Database Guide](./database.md) for full details.
+Creates a typed table helper with CRUD operations. See [Database Guide](/database) for full details.
 
 ```typescript
 const users = defineTable("users", {
@@ -479,4 +479,4 @@ export default definePlugin({ name: "my-plugin", ... });
 
 ---
 
-← [Plugin Configuration](./plugin-json.md) · **Chapter 3** · [Database Guide →](./database.md)
+← [Plugin Configuration](/plugin-json) · **Chapter 3** · [Database Guide →](/database)

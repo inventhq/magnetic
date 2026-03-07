@@ -333,4 +333,4 @@ Fields that don't apply to the chosen measure are omitted from the JSON response
 
 ---
 
-[← Previous: Core Concepts](./concepts.md) · **Chapter 3** · [Next: Data Operations →](./data-operations.md)
+[← Previous: Core Concepts](/concepts) · **Chapter 3** · [Next: Data Operations →](/data-operations)

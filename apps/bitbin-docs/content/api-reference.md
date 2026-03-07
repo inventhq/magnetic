@@ -11,7 +11,7 @@ Base URL: `https://{subdomain}.machx.dev` (your database instance) or `http://lo
 
 All endpoints accept `Authorization: Bearer YOUR_API_KEY` header for authentication.
 
-> For account management, authentication, database provisioning, and team management, see [Platform API](./platform.md).
+> For account management, authentication, database provisioning, and team management, see [Platform API](/platform).
 
 ---
 
@@ -34,7 +34,7 @@ Response:
 {"count": 12000, "sum": 5400000, "query_us": 12}
 ```
 
-See [Query Language Reference](./query-language.md) for full DSL.
+See [Query Language Reference](/query-language) for full DSL.
 
 ### POST /ask — Natural Language Query
 
@@ -347,7 +347,7 @@ curl "/api/v1/amount?between=100,1000&filter=region:eq:3&measure=count"
 
 Full-duplex binary or JSON protocol for queries, mutations, subscriptions, and pipeline calls over a single persistent connection. This is the highest-performance way to interact with BitBin.
 
-See [WebSocket Protocol](./websocket.md) for the full specification.
+See [WebSocket Protocol](/websocket) for the full specification.
 
 ---
 
@@ -407,4 +407,4 @@ Fan out a query to cluster nodes and merge results.
 
 ---
 
-[← Previous: Platform API](./platform.md) · **Chapter 10** · [Next: SQL Migration Guide →](./sql-migration.md)
+[← Previous: Platform API](/platform) · **Chapter 10** · [Next: SQL Migration Guide →](/sql-migration)

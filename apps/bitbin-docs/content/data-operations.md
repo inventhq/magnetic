@@ -122,13 +122,13 @@ Response:
 {"applied": 3, "rolled_back": 0}
 ```
 
-Use batch mutate when you need all-or-nothing semantics for a set of writes. For more complex logic (lookups + validations + writes), use [Pipelines](./pipelines.md).
+Use batch mutate when you need all-or-nothing semantics for a set of writes. For more complex logic (lookups + validations + writes), use [Pipelines](/pipelines).
 
 ---
 
 ## WebSocket Mutations
 
-For high-throughput writes, use the WebSocket protocol at `GET /ws/db`. See [WebSocket Protocol](./websocket.md) for the full specification.
+For high-throughput writes, use the WebSocket protocol at `GET /ws/db`. See [WebSocket Protocol](/websocket) for the full specification.
 
 ### JSON Mode
 
@@ -224,4 +224,4 @@ All paths provide the same durability guarantees. Data is persisted via memory-m
 
 ---
 
-[← Previous: Query Language](./query-language.md) · **Chapter 4** · [Next: Real-Time Subscriptions →](./realtime.md)
+[← Previous: Query Language](/query-language) · **Chapter 4** · [Next: Real-Time Subscriptions →](/realtime)

@@ -313,4 +313,4 @@ Only written pages consume physical memory — empty partitions have near-zero o
 
 ---
 
-[← Previous: API Reference](./api-reference.md) · **Chapter 11** · [Next: Plugin Integration →](./plugin-integration.md)
+[← Previous: API Reference](/api-reference) · **Chapter 11** · [Next: Plugin Integration →](/plugin-integration)

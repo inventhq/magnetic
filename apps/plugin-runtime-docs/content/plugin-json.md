@@ -156,4 +156,4 @@ The simplest possible `plugin.json`:
 
 ---
 
-← [Getting Started](./getting-started.md) · **Chapter 2** · [SDK Reference →](./sdk-reference.md)
+← [Getting Started](/getting-started) · **Chapter 2** · [SDK Reference →](/sdk-reference)

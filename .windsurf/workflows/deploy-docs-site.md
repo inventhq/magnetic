@@ -77,6 +77,17 @@ prepend content/concepts.md "Core Concepts" 2
 
 **Critical**: `order: 0` is valid. The sort uses `??` (nullish coalescing), not `||`.
 
+**Critical**: After adding frontmatter, fix all internal markdown links. Replace `(./filename.md)` with `(/filename)` — the SSG site uses route paths, not file paths. Links ending in `.md` will 404.
+
+```bash
+# Bulk-fix all .md links in content files
+cd content
+sed -i '' 's|(./index.md)|(/)|g' *.md
+# Repeat for every content file slug:
+sed -i '' 's|(./getting-started.md)|(/getting-started)|g' *.md
+# ... etc for each file
+```
+
 ### 4. Create `pages/IndexPage.tsx`
 
 Copy from `apps/docs/pages/IndexPage.tsx` and customize:

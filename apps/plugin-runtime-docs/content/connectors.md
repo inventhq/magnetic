@@ -459,4 +459,4 @@ This is transparent to your plugin code — no 401 handling needed.
 
 ---
 
-← [BitBin Analytics](./bitbin.md) · **Chapter 6** · [Examples & Patterns →](./examples.md)
+← [BitBin Analytics](/bitbin) · **Chapter 6** · [Examples & Patterns →](/examples)

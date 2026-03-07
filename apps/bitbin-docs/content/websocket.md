@@ -370,4 +370,4 @@ view.setUint8(11, 0);             // status = 0
 
 ---
 
-[← Previous: Real-Time Subscriptions](./realtime.md) · **Chapter 6** · [Next: Pipelines →](./pipelines.md)
+[← Previous: Real-Time Subscriptions](/realtime) · **Chapter 6** · [Next: Pipelines →](/pipelines)

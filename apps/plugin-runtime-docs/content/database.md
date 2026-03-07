@@ -312,4 +312,4 @@ This is read-only and requires the admin API key. Use it for dashboards, analyti
 
 ---
 
-← [SDK Reference](./sdk-reference.md) · **Chapter 4** · [BitBin Analytics →](./bitbin.md)
+← [SDK Reference](/sdk-reference) · **Chapter 4** · [BitBin Analytics →](/bitbin)

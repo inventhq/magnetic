@@ -650,7 +650,7 @@ const bitbin = new BitBinClient({
 rt.bitbin = bitbin;
 ```
 
-The plugin author never constructs URLs or manages API keys — the runtime handles provisioning via the [Platform API](./platform.md) (`POST /accounts/:id/databases`).
+The plugin author never constructs URLs or manages API keys — the runtime handles provisioning via the [Platform API](/platform) (`POST /accounts/:id/databases`).
 
 ---
 
@@ -730,4 +730,4 @@ This gets baked into every provisioned database's `endpoints.edge` field automat
 
 ---
 
-[← Previous: SQL Migration Guide](./sql-migration.md) · **Chapter 12** · [Back to Introduction →](./index.md)
+[← Previous: SQL Migration Guide](/sql-migration) · **Chapter 12** · [Back to Introduction →](/)

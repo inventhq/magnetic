@@ -535,4 +535,4 @@ The API allows all origins (`Access-Control-Allow-Origin: *`). No preflight conf
 
 ---
 
-[← Previous: Examples & Recipes](./examples.md) · **Chapter 9** · [Next: API Reference →](./api-reference.md)
+[← Previous: Examples & Recipes](/examples) · **Chapter 9** · [Next: API Reference →](/api-reference)

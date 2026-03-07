@@ -385,4 +385,4 @@ export default definePlugin({
 
 ---
 
-← [Database Guide](./database.md) · **Chapter 5** · [Connectors →](./connectors.md)
+← [Database Guide](/database) · **Chapter 5** · [Connectors →](/connectors)

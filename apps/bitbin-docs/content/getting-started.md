@@ -70,7 +70,7 @@ curl -X POST https://edba2ddef755.machx.dev/ingest \
   -d '{"count": 500}'
 ```
 
-For real applications, use keyed inserts for individual records or the WebSocket protocol for high-throughput ingestion. See [Data Operations](./data-operations.md).
+For real applications, use keyed inserts for individual records or the WebSocket protocol for high-throughput ingestion. See [Data Operations](/data-operations).
 
 ## Step 4: Run Your First Query
 
@@ -105,7 +105,7 @@ curl -X POST https://edba2ddef755.machx.dev/query \
 {"count": 312, "sum": 5400000, "query_us": 12}
 ```
 
-See [Query Language](./query-language.md) for the full DSL: ranges, joins, unions, group-by, top-k, and more.
+See [Query Language](/query-language) for the full DSL: ranges, joins, unions, group-by, top-k, and more.
 
 ## Step 5: Subscribe to Live Updates
 
@@ -124,7 +124,7 @@ event: result
 data: {"event":"update","fingerprint":"b2c3d4e5","result":{"count":501,"query_us":3}}
 ```
 
-Updates push only when the result actually changes — no polling. See [Real-Time Subscriptions](./realtime.md).
+Updates push only when the result actually changes — no polling. See [Real-Time Subscriptions](/realtime).
 
 ## Step 6: Save a Query as a Pipe
 
@@ -194,13 +194,13 @@ print(result)  # {"count": 312, "sum": 5400000, "query_us": 12}
 
 You have a live database. Here's where to go from here:
 
-- **Understand the data model** → [Core Concepts](./concepts.md) — tenants, entities, dimensions, record layout
-- **Learn the query DSL** → [Query Language](./query-language.md) — filters, aggregations, joins, unions
-- **Write data properly** → [Data Operations](./data-operations.md) — keyed CRUD, batch inserts, schema extensions
-- **Build real-time features** → [Real-Time Subscriptions](./realtime.md) — SSE push, multiplexed queries
-- **Add business logic** → [Pipelines](./pipelines.md) — atomic transactions, triggers, stored procedures
-- **See full patterns** → [Examples & Recipes](./examples.md) — e-commerce, IoT, dashboards, SaaS metrics
+- **Understand the data model** → [Core Concepts](/concepts) — tenants, entities, dimensions, record layout
+- **Learn the query DSL** → [Query Language](/query-language) — filters, aggregations, joins, unions
+- **Write data properly** → [Data Operations](/data-operations) — keyed CRUD, batch inserts, schema extensions
+- **Build real-time features** → [Real-Time Subscriptions](/realtime) — SSE push, multiplexed queries
+- **Add business logic** → [Pipelines](/pipelines) — atomic transactions, triggers, stored procedures
+- **See full patterns** → [Examples & Recipes](/examples) — e-commerce, IoT, dashboards, SaaS metrics
 
 ---
 
-[← Introduction](./index.md) · **Chapter 1** · [Next: Core Concepts →](./concepts.md)
+[← Introduction](/) · **Chapter 1** · [Next: Core Concepts →](/concepts)
