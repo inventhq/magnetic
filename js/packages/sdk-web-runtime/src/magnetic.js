@@ -246,6 +246,39 @@
         deb["_scroll"] = setTimeout(function() { send(t.dataset.a_scroll, { scrollTop: t.scrollTop, scrollLeft: t.scrollLeft }); }, 150);
       }
     }, true);
+    d.addEventListener("dragstart", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_dragstart]");
+      if (t) {
+        var key = t.dataset.key || "";
+        e.dataTransfer.setData("text/plain", key);
+        e.dataTransfer.effectAllowed = "move";
+        send(t.dataset.a_dragstart, { key: key });
+      }
+    });
+    d.addEventListener("dragover", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_dragover]");
+      if (t) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        send(t.dataset.a_dragover, { key: t.dataset.key || "" });
+      }
+    });
+    d.addEventListener("drop", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_drop]");
+      if (t) {
+        e.preventDefault();
+        var dragKey = e.dataTransfer.getData("text/plain");
+        send(t.dataset.a_drop, { dragKey: dragKey, dropKey: t.dataset.key || "" });
+      }
+    });
+    d.addEventListener("dragend", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_dragend]");
+      if (t) send(t.dataset.a_dragend, { key: t.dataset.key || "" });
+    });
   }
 
   // --- Action dispatch: POST → apply response (single round-trip) ---

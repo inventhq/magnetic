@@ -367,6 +367,10 @@ Events in Magnetic are **action name strings**, not JavaScript callbacks.
 | `onKeyDown="action_name"` | Key pressed | `{ key: "Enter", code: "Enter" }` |
 | `onKeyUp="action_name"` | Key released | `{ key: "Enter", code: "Enter" }` |
 | `onScroll="action_name"` | Element scrolled (150ms debounce) | `{ scrollTop: 0, scrollLeft: 0 }` |
+| `onDragStart="action_name"` | Drag begins (element must have `draggable="true"`) | `{ key: "element-key" }` |
+| `onDragOver="action_name"` | Dragged item over drop target (auto-prevents default) | `{ key: "target-key" }` |
+| `onDrop="action_name"` | Item dropped on target | `{ dragKey: "source-key", dropKey: "target-key" }` |
+| `onDragEnd="action_name"` | Drag operation ended | `{ key: "element-key" }` |
 
 ### Action Flow
 

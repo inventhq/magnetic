@@ -61,6 +61,10 @@ const EVENT_MAP: Record<string, string> = {
   onKeyDown: 'keydown',
   onKeyUp: 'keyup',
   onScroll: 'scroll',
+  onDragStart: 'dragstart',
+  onDragOver: 'dragover',
+  onDrop: 'drop',
+  onDragEnd: 'dragend',
 };
 
 function flattenChildren(raw: Child | Child[]): DomNode[] {
@@ -191,6 +195,13 @@ interface HtmlAttributes {
   onKeyDown?: string;
   onKeyUp?: string;
   onScroll?: string;
+  onDragStart?: string;
+  onDragOver?: string;
+  onDrop?: string;
+  onDragEnd?: string;
+
+  // Drag attributes
+  draggable?: Booleanish;
 
   children?: Child | Child[];
   [attr: string]: unknown;
