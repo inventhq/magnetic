@@ -361,12 +361,12 @@ Events in Magnetic are **action name strings**, not JavaScript callbacks.
 | `onClick="action_name"` | Click | `{}` |
 | `onSubmit="action_name"` | Form submit | `{ inputName: value, ... }` |
 | `onInput="action_name"` | Keystroke (300ms debounce) | `{ value: "current text" }` |
-| `onChange="action_name"` | Input change | `{}` |
+| `onChange="action_name"` | Value committed (select, color picker, checkbox, radio) | `{ value: ".." }` or `{ value: "..", checked: true }` |
 | `onFocus="action_name"` | Element focused | `{}` |
 | `onBlur="action_name"` | Element blurred | `{}` |
-| `onKeyDown="action_name"` | Key pressed | `{}` |
-| `onKeyUp="action_name"` | Key released | `{}` |
-| `onScroll="action_name"` | Element scrolled | `{}` |
+| `onKeyDown="action_name"` | Key pressed | `{ key: "Enter", code: "Enter" }` |
+| `onKeyUp="action_name"` | Key released | `{ key: "Enter", code: "Enter" }` |
+| `onScroll="action_name"` | Element scrolled (150ms debounce) | `{ scrollTop: 0, scrollLeft: 0 }` |
 
 ### Action Flow
 
@@ -398,6 +398,81 @@ if (m) {
   return { ...state, items: state.items.filter(i => i.id !== id) };
 }
 ```
+
+### Interactive Inputs
+
+**`onInput`** fires on every keystroke (debounced 300ms). Use for text fields, search boxes, textareas:
+
+```tsx
+<input type="text" onInput="live_search" key="search" />
+```
+
+The reducer receives `{ value: "current text" }`.
+
+**`onChange`** fires once on commit — when the user releases a color picker, selects a dropdown option, or toggles a checkbox/radio. Use for `<select>`, `<input type="color">`, `<input type="checkbox">`, `<input type="radio">`:
+
+```tsx
+<input type="color" value={props.primaryHex} onChange="set-primary" key="color-pick" />
+<select onChange="set-theme" key="theme-select">
+  <option value="dark">Dark</option>
+  <option value="light">Light</option>
+</select>
+<input type="checkbox" onChange="toggle-feature" key="feat-check" />
+```
+
+The reducer receives `{ value: "#ff6600" }` for most inputs, or `{ value: "on", checked: true }` for checkboxes/radios.
+
+**Do not use `onChange` for text fields** — use `onInput` instead. Text field `change` events only fire on blur, which feels unresponsive.
+
+### Action String Convention
+
+Action names are plain strings. To pass parameters, encode them in the action name using a delimiter (typically `_`):
+
+```tsx
+// Single parameter
+<button onClick={`delete_${item.id}`}>Delete</button>
+<input type="color" onChange={`set-color_${colorName}`} key={`pick-${colorName}`} />
+
+// Multiple parameters
+<button onClick={`move_${item.id}_${direction}`}>Move</button>
+```
+
+Parse in the reducer:
+
+```ts
+export function reduce(state: AppState, action: string, payload: any): AppState {
+  // Exact match actions
+  if (action === 'reset') return initialState();
+  if (action === 'live_search') return { ...state, query: payload?.value || '' };
+
+  // Parameterized actions — parse the encoded ID/value
+  const colorMatch = action.match(/^set-color_(.+)$/);
+  if (colorMatch) {
+    const name = colorMatch[1];       // e.g. "primary-hover"
+    const hex = payload?.value;        // e.g. "#ff6600"
+    return { ...state, colors: { ...state.colors, [name]: hex } };
+  }
+
+  const deleteMatch = action.match(/^delete_(\d+)$/);
+  if (deleteMatch) {
+    return { ...state, items: state.items.filter(i => i.id !== +deleteMatch[1]) };
+  }
+
+  return state;
+}
+```
+
+**Convention summary:**
+
+| Pattern | Example | Use case |
+|---------|---------|----------|
+| `"action"` | `"reset"` | Simple trigger, no parameters |
+| `"action_id"` | `"delete_42"` | Single parameter (ID) |
+| `"action_name"` | `"set-color_primary"` | Single parameter (string key) |
+| `"action_id_value"` | `"move_42_up"` | Multiple parameters |
+| `"navigate:/path"` | `"navigate:/about"` | Client-side navigation (special prefix) |
+
+The `payload` object is populated by the client runtime based on the event type — you don't control it from JSX. Parameters you need to pass must go in the action name.
 
 ### Navigation
 

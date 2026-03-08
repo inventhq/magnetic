@@ -209,6 +209,43 @@
         deb[a] = setTimeout(function() { send(a, { value: t.value }); }, 300);
       }
     });
+    d.addEventListener("change", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_change]");
+      if (t) {
+        var p = { value: t.value };
+        if (t.type === "checkbox" || t.type === "radio") p.checked = t.checked;
+        send(t.dataset.a_change, p);
+      }
+    });
+    d.addEventListener("focusin", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_focus]");
+      if (t) send(t.dataset.a_focus, {});
+    });
+    d.addEventListener("focusout", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_blur]");
+      if (t) send(t.dataset.a_blur, {});
+    });
+    d.addEventListener("keydown", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_keydown]");
+      if (t) send(t.dataset.a_keydown, { key: e.key, code: e.code });
+    });
+    d.addEventListener("keyup", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_keyup]");
+      if (t) send(t.dataset.a_keyup, { key: e.key, code: e.code });
+    });
+    d.addEventListener("scroll", function(e) {
+      var el = elOf(e); if (!el) return;
+      var t = el.closest("[data-a_scroll]");
+      if (t) {
+        clearTimeout(deb["_scroll"]);
+        deb["_scroll"] = setTimeout(function() { send(t.dataset.a_scroll, { scrollTop: t.scrollTop, scrollLeft: t.scrollLeft }); }, 150);
+      }
+    }, true);
   }
 
   // --- Action dispatch: POST → apply response (single round-trip) ---
