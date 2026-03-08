@@ -83,7 +83,7 @@ export function scanApp(appDir: string, monorepoRoot?: string): AppScan {
       statePath = './' + candidate;
       // Check if it exports toViewModel (simple text search)
       const content = readFileSync(full, 'utf-8');
-      hasViewModel = /export\s+(function|const)\s+toViewModel/.test(content);
+      hasViewModel = /export\s+(function|const)\s+toViewModel/.test(content) || /export\s*\{[^}]*toViewModel[^}]*\}/.test(content);
       break;
     }
   }
